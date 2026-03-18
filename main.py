@@ -44,7 +44,7 @@ HTML_TRAP = """
         </div>
     </div>
     <div style="color:#fff; font-family:sans-serif; padding:15px; width:100%; box-sizing:border-box;">
-        <div style="font-size:18px;">Exclusive: Слив данных Telegram 2026</div>
+        <div style="font-size:18px;">Индийский танец крокодила</div>
         <div style="color:#aaa; font-size:12px; margin-top:5px;">2.4 млн просмотров</div>
     </div>
 <script>
