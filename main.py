@@ -1,9 +1,12 @@
-import asyncio, requests, uuid, json
+import asyncio
+import threading  # <--- ВОТ ЭТОГО НЕ ХВАТАЛО
+import requests
+import uuid
+import json
 from flask import Flask, render_template_string, request
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-
 # --- КОНФИГ ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com" 
