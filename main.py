@@ -2,7 +2,7 @@ import threading, requests, json, os, base64
 from flask import Flask, render_template_string, request, jsonify
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-
+ 
 # --- [1] НАСТРОЙКИ ---
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 OVERLORD_ID = 6659724115 
